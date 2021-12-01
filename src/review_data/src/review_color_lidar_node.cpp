@@ -259,9 +259,9 @@ void ImageLivoxFusion::get_lidar()
     in_bag.open(lidar_file_dir, rosbag::bagmode::Read); 
      //创建view，用于读取bag中的topic
     std::vector<std::string> topics; 
-    topics.push_back(std::string("livox/lidar"));   // 注意，这里topic前面没有/
-    topics.push_back(std::string("hik_cam_node/hik_camera"));   // 注意，这里topic前面没有/
-    rosbag::View view_in_bag(in_bag);
+    topics.push_back(std::string("/livox/lidar"));   
+    topics.push_back(std::string("/hik_cam_node/hik_camera"));   
+    rosbag::View view_in_bag(in_bag, rosbag::TopicQuery(topics));
     
     // rosbag::View view_in_bag(in_bag, rosbag::TopicQuery(topics));
     for(rosbag::MessageInstance const msg: view_in_bag) 
