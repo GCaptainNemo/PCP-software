@@ -5,10 +5,10 @@
 	</include>
 	<include file="$(find usb_cam)/launch/usb_flir-test.launch">
 	</include>
-        <include file="$(find color_pc)/launch/fusion.launch">
-	</include>
-        <!--node pkg="image_view" type="image_view" name="rgb_image_view"   respawn="false" output="screen">
+        <!--include file="$(find color_pc)/launch/fusion.launch">
+	</include-->
+        <node pkg="image_view" type="image_view" name="rgb_image_view"   respawn="false" output="screen">
     		<remap from="image" to="/hik_cam_node/hik_camera"/>
     		<param name="autosize" value="true" />
-  	</node-->
+  	</node>
 </launch>
