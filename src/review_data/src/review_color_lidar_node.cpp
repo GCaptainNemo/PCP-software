@@ -12,20 +12,21 @@
 #include "livox_ros_driver/CustomMsg.h"
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_types.h>
-#include <pcl/io/pcd_io.h> //PCL的PCD格式文件的输入输出头文件
+#include <pcl/io/pcd_io.h> 
 #include <pcl/visualization/cloud_viewer.h>
 
 #include <ros/ros.h>
 #include <ros/package.h>
 #include <opencv/highgui.h>
-#include <unistd.h>
 #include <stdio.h>
-#include <sys/types.h>
-#include <dirent.h>
+
 #include <rosbag/bag.h>
 #include <rosbag/view.h>
 
 #include <boost/foreach.hpp>
+#include "utils.h"
+
+
 #define ROS_MIN_MAJOR 1
 #define ROS_MIN_MINOR 8
 #define ROS_MIN_PATCH 16
@@ -40,6 +41,8 @@
 const bool IS_FILTER = true;
 const bool IS_IMAGE_CORRECTION = true;
 
+std::vector<cv::Point2f> corners(0);
+std::vector<cv::Point2f> ir_corners(0);
 
 cv_bridge::CvImagePtr cv_ptr;
 cv::Mat out_img;
@@ -51,26 +54,6 @@ typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloudXYZRGB;
 // PointCloudXYZRGB::Ptr pc_ptr_xyzrgb(new PointCloudXYZRGB);
 
 
-
-
-int IsFolderExist(const char* path)
-{
-    DIR *dp;
-    if ((dp = opendir(path)) == NULL)
-    {
-        return 0;
-    }
- 
-    closedir(dp);
-    return -1;
-}
-
-int IsFileExist(const char* path)
-{
-    return !access(path, F_OK);
-}
-
-
 class ImageLivoxFusion
 {
 public:
@@ -78,10 +61,15 @@ public:
     cv::Mat intrinsic_matrix;    /**< from local to image coordinate  */
 	cv::Mat extrinsic_matrix;    /**< from global to local coordinate */
 	cv::Mat dist_matrix;         /**< dist parameters  */
-    int img_height;
-    int img_width;
+    int rgb_img_height;
+    int rgb_img_width;
+    int ir_img_height;
+    int ir_img_width;
+    
     cv::Mat rgb_img;
     cv::Mat range_img;      /**< record z(unit m)*/
+    cv::Mat color_range_img;
+    cv::Mat ir_img;
     cv::Mat mask_img;       /**count reprojection times*/
 
 public:
@@ -92,6 +80,7 @@ public:
     ros::NodeHandle node_handle;
     std::string lidar_file_dir;
     std::string rgb_file_dir;
+    std::string ir_file_dir;
     std::string save_dir;
     std::string prefix;
     
@@ -113,15 +102,62 @@ public:
    ~ImageLivoxFusion()
   {
   };
-
+  // get camera parameters
   void set_param();
+
+  // get lidar, infrared and visual image and fusion(get colored lidar)
   int get_data_and_fusion();
-  void get_rgb_img();
+
+  // read visual image and infrared image 
+  void get_imgs();
+
+  // get lidar 
   void get_lidar();
+
+  // fusion
   void fusion();
+
+  // choose image correspondance points
+  void choose_corners();
+
+  // use direct linear transform calculate projected matrix and project range image to infrared image
+  void dlt();
   
 };
-  
+
+void ImageLivoxFusion::choose_corners()
+{
+    // ///////////////////////////////////////////////////////
+    // choose corner
+    // //////////////////////////////////////////////////////
+    std::vector<cv::Mat> hImgs;
+    hImgs.push_back(color_range_img);
+    hImgs.push_back(rgb_img);
+    hImgs.push_back(ir_img);
+
+    cv::Mat cat_img;
+    cv::hconcat(hImgs, cat_img);
+    // cv::Mat clone_src_img = rgb_img.clone();
+    IplImage *img = new IplImage(cat_img);
+    cvNamedWindow("src", 1);
+    cvSetMouseCallback("src", on_mouse, img);
+    cvShowImage("src", img);
+    
+    char *obj_key = "q";
+    while ((char)cv::waitKey(1) != *obj_key) {}
+    // cvWaitKey(0);
+    // cvDestroyAllWindows();
+    delete img;
+    // cvReleaseImage(&img);
+    // corners-> std::vector<cv::Point>
+    if (!corners.size()) {
+        cout << "No input corners, end process" << endl;
+        return ;
+    }
+
+
+};
+
 
 int ImageLivoxFusion::get_data_and_fusion()
 {
@@ -134,15 +170,15 @@ int ImageLivoxFusion::get_data_and_fusion()
     // lidar_file_dir = save_dir + prefix + "_msg.bag";
     
     rgb_file_dir = save_dir + prefix + "_rgb.jpg";
-    ROS_INFO("lidar_file_dir = %s", lidar_file_dir.c_str());
-    ROS_INFO("rgb_file_dir = %s", rgb_file_dir.c_str());
+    ir_file_dir = save_dir + prefix + "_ir.jpg";
+    
     
     if (!IsFileExist(lidar_file_dir.c_str()) || !IsFileExist(rgb_file_dir.c_str()))
     {return -1;}
      // /////////////////////////////////////////////
     // get data and fusion
     // /////////////////////////////////////////////
-    get_rgb_img();
+    get_imgs();
     get_lidar();
     fusion();
     return 0;
@@ -210,10 +246,10 @@ void ImageLivoxFusion::set_param()
         ROS_INFO("PARAME SIZE = %d", int(tmp_value));
       }
   }
-  img_width = img_size[0];
-  img_height = img_size[1];
-  range_img = cv::Mat::zeros(img_height, img_width, CV_32FC1);
-  mask_img = cv::Mat::zeros(img_height, img_width, CV_8UC1);
+  rgb_img_width = img_size[0];
+  rgb_img_height = img_size[1];
+  range_img = cv::Mat::zeros(rgb_img_height, rgb_img_width, CV_32FC1);
+  mask_img = cv::Mat::zeros(rgb_img_height, rgb_img_width, CV_8UC1);
   // convert cv::Mat
   cv::Mat dist_array(5, 1, CV_64F, &dist[0]);
   this->dist_matrix = dist_array.clone();
@@ -231,7 +267,7 @@ void ImageLivoxFusion::set_param()
   this->transform_matrix = Int * this->extrinsic_matrix;
 }
 
-void ImageLivoxFusion::get_rgb_img()
+void ImageLivoxFusion::get_imgs()
 {
   this->rgb_img = cv::imread(rgb_file_dir, -1);
   if (IS_IMAGE_CORRECTION){
@@ -239,6 +275,12 @@ void ImageLivoxFusion::get_rgb_img()
     cv::undistort(rgb_img, undist_img, this->intrinsic_matrix, this->dist_matrix);
     rgb_img = undist_img.clone();
   }
+  this->ir_img = cv::imread(ir_file_dir, -1);
+  ir_img_height = ir_img.rows;
+  ir_img_width = ir_img.cols;
+  cv::Size dst_size(rgb_img_width, rgb_img_height);
+  
+  cv::resize(ir_img, ir_img, dst_size, cv::INTER_CUBIC);
 //   cv::imshow("src", rgb_img);
 //   cv::waitKey(0);
 };
@@ -309,30 +351,35 @@ void ImageLivoxFusion::fusion()
         double a_[4] = { pointRGB.x, pointRGB.y, pointRGB.z, 1.0 };
         cv::Mat pos(4, 1, CV_64F, a_);
         cv::Mat newpos(this->transform_matrix * pos);
+
         float x = (float)(newpos.at<double>(0, 0) / newpos.at<double>(2, 0));
         float y = (float)(newpos.at<double>(1, 0) / newpos.at<double>(2, 0));
+        
         // ROS_INFO("x = %f, y =%f", x, y);
         // Trims viewport according to image size
         if (pointRGB.x >= 0)
         {
-          if (x >= 0 && x < img_width && y >= 0 && y < img_height)
+          if (x >= 0 && x < rgb_img_width && y >= 0 && y < rgb_img_height)
           {
             //  imread BGR（BITMAP）
             int row = int(y + 0.5);
             int column = int(x + 0.5);
-            // ROS_INFO("row = %d, column =%d", row, column);
-
-            pointRGB.r = rgb_img.at<cv::Vec3b>(row, column)[2];
-            pointRGB.g = rgb_img.at<cv::Vec3b>(row, column)[1];
-            pointRGB.b = rgb_img.at<cv::Vec3b>(row, column)[0];
-            // ROS_INFO("row = %d, column =%d", row, column);
-            float val = range_img.at<float>(row, column);
-            if (val == 0 || pointRGB.x < val)
+            if (row < rgb_img_height && column < rgb_img_width)
             {
-                range_img.at<float>(row, column) = pointRGB.x;
-                mask_img.at<int>(row, column) += 1;
+                // ROS_INFO("row = %d, column =%d", row, column);
+
+                pointRGB.r = rgb_img.at<cv::Vec3b>(row, column)[2];
+                pointRGB.g = rgb_img.at<cv::Vec3b>(row, column)[1];
+                pointRGB.b = rgb_img.at<cv::Vec3b>(row, column)[0];
+                // ROS_INFO("row = %d, column =%d", row, column);
+                float val = range_img.at<float>(row, column);
+                if (val == 0 || pointRGB.x < val)
+                {
+                    range_img.at<float>(row, column) = pointRGB.x;
+                    mask_img.at<int>(row, column) += 1;
+                }
+                pc_ptr_xyzrgb->push_back(pointRGB);
             }
-            pc_ptr_xyzrgb->push_back(pointRGB);
           }
         }
     }
@@ -356,18 +403,16 @@ void ImageLivoxFusion::fusion()
     normalize_range_img.convertTo(range_image_8uc1,CV_8UC1,255.0);
     ROS_INFO_STREAM("convertTo CV_8UC1");
 	ROS_INFO_STREAM("ImgColorC3.type()" << range_image_8uc1.type());
-    cv::Mat range_im_color;
-    cv::Mat mask_im_color;
     
+
+    cv::applyColorMap(range_image_8uc1, color_range_img, cv::COLORMAP_JET);
     
-    cv::applyColorMap(range_image_8uc1, range_im_color, cv::COLORMAP_JET);
-    cv::applyColorMap(mask_img, mask_im_color, cv::COLORMAP_JET);
-    
+    // cv::applyColorMap(mask_img, mask_im_color, cv::COLORMAP_JET);
     // cv::imshow("range_image", normalize_range_img);
-    cv::imshow("range_image", range_im_color);
+    // cv::imshow("range_image", color_range_img);
     // cv::waitKey(0);
-    cv::imshow("mask_image", mask_im_color);
-    cv::waitKey(0);
+    // cv::imshow("mask_image", mask_im_color);
+    // cv::waitKey(0);
 
 }   
 
@@ -376,10 +421,8 @@ void ImageLivoxFusion::fusion()
 int main(int argc, char **argv) {
   ros::init(argc, argv, "review_color_lidar_node");
   ImageLivoxFusion img_lidar_fusion_obj;
-//   ros::spin();
-//   ros::Duration du(10);//持续10秒钟,参数是double类型的，以秒为单位
-//   du.sleep();
   int res = img_lidar_fusion_obj.get_data_and_fusion();
+  img_lidar_fusion_obj.choose_corners();
   // save
   if (res != 0){
       ROS_INFO("RES = %d", res);
