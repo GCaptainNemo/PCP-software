@@ -12,6 +12,8 @@
 #include "livox_ros_driver/CustomMsg.h"
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_types.h>
+#include <pcl/io/pcd_io.h> //PCL的PCD格式文件的输入输出头文件
+#include <pcl/visualization/cloud_viewer.h>
 
 #include <ros/ros.h>
 #include <ros/package.h>
@@ -23,7 +25,7 @@
 #include <rosbag/bag.h>
 #include <rosbag/view.h>
 
-
+#include <boost/foreach.hpp>
 #define ROS_MIN_MAJOR 1
 #define ROS_MIN_MINOR 8
 #define ROS_MIN_PATCH 16
@@ -33,8 +35,11 @@
 #else
 #include <cv_bridge/CvBridge.h>
 #endif
-#include <boost/foreach.hpp>
+
 #define foreach BOOST_FOREACH
+const bool IS_FILTER = true;
+const bool IS_IMAGE_CORRECTION = true;
+
 
 cv_bridge::CvImagePtr cv_ptr;
 cv::Mat out_img;
@@ -42,9 +47,9 @@ typedef pcl::PointXYZI PointType;
 typedef pcl::PointCloud<PointType> PointCloudXYZI;
 typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloudXYZRGB;
 
-PointCloudXYZI::Ptr pc_ptr_xyzi(new PointCloudXYZI); 
-PointCloudXYZRGB::Ptr pc_ptr_xyzrgb(new PointCloudXYZRGB);
-bool IS_FILTER = true;
+// PointCloudXYZI::Ptr pc_ptr_xyzi(new PointCloudXYZI); 
+// PointCloudXYZRGB::Ptr pc_ptr_xyzrgb(new PointCloudXYZRGB);
+
 
 
 
@@ -76,22 +81,26 @@ public:
     int img_height;
     int img_width;
     cv::Mat rgb_img;
+    cv::Mat range_img;      /**< record z(unit m)*/
+    cv::Mat mask_img;       /**count reprojection times*/
 
 public:
-    ros::Subscriber livox_sub;
-    
-
+    PointCloudXYZI::Ptr pc_ptr_xyzi; 
+    PointCloudXYZRGB::Ptr pc_ptr_xyzrgb;
 
 public:
     ros::NodeHandle node_handle;
     std::string lidar_file_dir;
     std::string rgb_file_dir;
+    std::string save_dir;
+    std::string prefix;
+    
 public:
   ImageLivoxFusion()
   {
     ROS_INFO("------------ intialize ----------\n");
-    // pc_ptr_xyzi.reset(new PointCloudXYZI());
-    // pc_ptr_xyzrgb.reset(new PointCloudXYZRGB());
+    pc_ptr_xyzi.reset(new PointCloudXYZI());
+    pc_ptr_xyzrgb.reset(new PointCloudXYZRGB());
     
     // livox_sub = node_handle.subscribe("/livox/lidar", 100, &ImageLivoxFusion::livoxCallback, this);
     
@@ -110,42 +119,19 @@ public:
   void get_rgb_img();
   void get_lidar();
   void fusion();
-  void livoxCallback(const livox_ros_driver::CustomMsgConstPtr& livox_msg_in);
   
-};
-
-void ImageLivoxFusion::livoxCallback(const livox_ros_driver::CustomMsgConstPtr& livox_msg)
-{
-    ROS_INFO("in livox callback");
-    
-    for (unsigned int i = 0; i < livox_msg->point_num; ++i) {
-        // PointXYZINormal
-        PointType pt;
-        pt.x = livox_msg->points[i].x;
-        pt.y = livox_msg->points[i].y;
-        pt.z = livox_msg->points[i].z;
-        pt.intensity = livox_msg->points[i].reflectivity;
-        if (IS_FILTER && livox_msg->points[i].tag != 16)
-        {
-            // 去除噪点（1. 基于能量判断的噪点 2. 基于空间位置判断的噪点）
-            continue;
-        }
-        pc_ptr_xyzi->push_back(pt);
-    }
 };
   
 
 int ImageLivoxFusion::get_data_and_fusion()
 {
-    std::string save_dir;
-    std::string prefix;
     node_handle.getParam("save_dir",save_dir);
     node_handle.getParam("prefix", prefix);
     ROS_INFO("save_dir = %s", save_dir.c_str());
     if(!IsFolderExist(save_dir.c_str())){ROS_ERROR("save dir doesn't exist"); return -1;}
     ROS_INFO("save dir exists!!");
-    // lidar_file_dir = save_dir + prefix + "_lidar.bag";
-    lidar_file_dir = save_dir + prefix + "_msg.bag";
+    lidar_file_dir = save_dir + prefix + "_lidar.bag";
+    // lidar_file_dir = save_dir + prefix + "_msg.bag";
     
     rgb_file_dir = save_dir + prefix + "_rgb.jpg";
     ROS_INFO("lidar_file_dir = %s", lidar_file_dir.c_str());
@@ -226,10 +212,11 @@ void ImageLivoxFusion::set_param()
   }
   img_width = img_size[0];
   img_height = img_size[1];
+  range_img = cv::Mat::zeros(img_height, img_width, CV_32FC1);
+  mask_img = cv::Mat::zeros(img_height, img_width, CV_8UC1);
   // convert cv::Mat
   cv::Mat dist_array(5, 1, CV_64F, &dist[0]);
   this->dist_matrix = dist_array.clone();
-
   
   cv::Mat Int(3, 3, CV_64F, &Intrinsic[0]);
   this->intrinsic_matrix = Int.clone();
@@ -247,6 +234,11 @@ void ImageLivoxFusion::set_param()
 void ImageLivoxFusion::get_rgb_img()
 {
   this->rgb_img = cv::imread(rgb_file_dir, -1);
+  if (IS_IMAGE_CORRECTION){
+    cv::Mat undist_img;
+    cv::undistort(rgb_img, undist_img, this->intrinsic_matrix, this->dist_matrix);
+    rgb_img = undist_img.clone();
+  }
 //   cv::imshow("src", rgb_img);
 //   cv::waitKey(0);
 };
@@ -259,11 +251,11 @@ void ImageLivoxFusion::get_lidar()
     in_bag.open(lidar_file_dir, rosbag::bagmode::Read); 
      //创建view，用于读取bag中的topic
     std::vector<std::string> topics; 
-    topics.push_back(std::string("/livox/lidar"));   
-    topics.push_back(std::string("/hik_cam_node/hik_camera"));   
-    rosbag::View view_in_bag(in_bag, rosbag::TopicQuery(topics));
-    
+    // topics.push_back(std::string("/livox/lidar"));   
+    // topics.push_back(std::string("/hik_cam_node/hik_camera"));   
     // rosbag::View view_in_bag(in_bag, rosbag::TopicQuery(topics));
+    
+    rosbag::View view_in_bag(in_bag);
     for(rosbag::MessageInstance const msg: view_in_bag) 
     {
         livox_ros_driver::CustomMsgPtr livox_msg = msg.instantiate<livox_ros_driver::CustomMsg>();
@@ -319,22 +311,27 @@ void ImageLivoxFusion::fusion()
         cv::Mat newpos(this->transform_matrix * pos);
         float x = (float)(newpos.at<double>(0, 0) / newpos.at<double>(2, 0));
         float y = (float)(newpos.at<double>(1, 0) / newpos.at<double>(2, 0));
-        ROS_INFO("x = %f, y =%f", x, y);
+        // ROS_INFO("x = %f, y =%f", x, y);
         // Trims viewport according to image size
         if (pointRGB.x >= 0)
         {
           if (x >= 0 && x < img_width && y >= 0 && y < img_height)
           {
             //  imread BGR（BITMAP）
-            int row = int(y);
-            int column = int(x);
-            ROS_INFO("row = %d, column =%d", row, column);
+            int row = int(y + 0.5);
+            int column = int(x + 0.5);
+            // ROS_INFO("row = %d, column =%d", row, column);
 
             pointRGB.r = rgb_img.at<cv::Vec3b>(row, column)[2];
             pointRGB.g = rgb_img.at<cv::Vec3b>(row, column)[1];
             pointRGB.b = rgb_img.at<cv::Vec3b>(row, column)[0];
-            ROS_INFO("row = %d, column =%d", row, column);
-
+            // ROS_INFO("row = %d, column =%d", row, column);
+            float val = range_img.at<float>(row, column);
+            if (val == 0 || pointRGB.x < val)
+            {
+                range_img.at<float>(row, column) = pointRGB.x;
+                mask_img.at<int>(row, column) += 1;
+            }
             pc_ptr_xyzrgb->push_back(pointRGB);
           }
         }
@@ -342,6 +339,36 @@ void ImageLivoxFusion::fusion()
     pc_ptr_xyzrgb->width = 1;
     pc_ptr_xyzrgb->height = pc_ptr_xyzrgb->points.size();
     ROS_INFO("pc_xyzrgb.size = %d", pc_ptr_xyzrgb->points.size());
+    // range image processing and show
+    double minVal = 0.0;
+    double maxVal = 0.0;
+    cv::minMaxLoc(range_img, &minVal, &maxVal);
+    ROS_INFO_STREAM( "range image min, max = "<< minVal << ", " << maxVal);
+    double min_val = 0;
+    double max_val = 0;
+    cv::minMaxLoc(mask_img, &min_val, &max_val);
+    ROS_INFO_STREAM( "mask image min, max = "<< min_val << ", " << max_val);
+
+    cv::Mat normalize_range_img;
+    cv::normalize(range_img, normalize_range_img, 1.0, 0, cv::NORM_MINMAX);
+    cv::Mat range_image_8uc1;
+    
+    normalize_range_img.convertTo(range_image_8uc1,CV_8UC1,255.0);
+    ROS_INFO_STREAM("convertTo CV_8UC1");
+	ROS_INFO_STREAM("ImgColorC3.type()" << range_image_8uc1.type());
+    cv::Mat range_im_color;
+    cv::Mat mask_im_color;
+    
+    
+    cv::applyColorMap(range_image_8uc1, range_im_color, cv::COLORMAP_JET);
+    cv::applyColorMap(mask_img, mask_im_color, cv::COLORMAP_JET);
+    
+    // cv::imshow("range_image", normalize_range_img);
+    cv::imshow("range_image", range_im_color);
+    // cv::waitKey(0);
+    cv::imshow("mask_image", mask_im_color);
+    cv::waitKey(0);
+
 }   
 
 
@@ -353,7 +380,28 @@ int main(int argc, char **argv) {
 //   ros::Duration du(10);//持续10秒钟,参数是double类型的，以秒为单位
 //   du.sleep();
   int res = img_lidar_fusion_obj.get_data_and_fusion();
-  ROS_INFO("RES = %d", res);
+  // save
+  if (res != 0){
+      ROS_INFO("RES = %d", res);
+      return -1;
+  }
+  ROS_INFO("there are %d args", argc);
+  if (strcmp(argv[1], "true") == 0) 
+  {
+      ROS_INFO("START SAVING");
+      std::string output_dir = img_lidar_fusion_obj.save_dir + img_lidar_fusion_obj.prefix + std::string(".pcd");
+      pcl::io::savePCDFile(output_dir, *(img_lidar_fusion_obj.pc_ptr_xyzrgb));
+  }
+  // visualize
+  if (strcmp(argv[2], "true") == 0) 
+  {
+    ROS_INFO("START visualizing");
+    pcl::visualization::CloudViewer viewer("Simple Cloud Viewer"); //创造一个显示窗口
+    viewer.showCloud(img_lidar_fusion_obj.pc_ptr_xyzrgb);
+    while (!viewer.wasStopped())
+    {
+    }
+  }
   
   return 0;
 }

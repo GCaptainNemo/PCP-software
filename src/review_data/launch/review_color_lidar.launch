@@ -1,10 +1,11 @@
 <launch>
-	<!--save_dir and prefix global-->
-	<!--param name="save_dir" type="string" value="/media/why/LENOVO_USB_HDD/ir_rgb_registration_data_collect/" /-->
-	<param name="save_dir" type="string" value="/home/why/" />
-	<param name="prefix" type="string" value="static" />
-        <node name="review_color_lidar_node" output="screen" pkg="review_data" required="false" type="review_color_lidar_node" >
-		<rosparam file="$(find review_data)/config/param3.yaml" command="load"/>
+	<param name="save_dir" type="string" value="/media/why/LENOVO_USB_HDD/ir_rgb_registration_data_collect/" />
+	<param name="prefix" type="string" value="0003" />	
+	<!--param name="save_dir" type="string" value="/home/why/" /-->
+	<!--param name="prefix" type="string" value="static" /-->
+	<!--args: is_save is_visualize-->        
+	<node name="review_color_lidar_node" output="screen" pkg="review_data" required="true" type="review_color_lidar_node" args="false true">
+		<rosparam file="$(find review_data)/config/param2.yaml" command="load"/>
 	</node>
 	<!--node pkg="rosbag" type="play" name="lidar_play" required="false" args="/home/why/static_msg.bag" output="screen"/-->
 </launch>

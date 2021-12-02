@@ -15,12 +15,13 @@ catkin_package(
 
 )
 find_package(OpenCV REQUIRED)
-find_package(PCL REQUIRED)
+# find_package(PCL REQUIRED)
+find_package( PCL REQUIRED COMPONENTS common io visualization )
 
 include_directories(${catkin_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${PCL_INCLUDE_DIRS})
 
 add_executable(review_color_lidar_node src/review_color_lidar_node.cpp)
-target_link_libraries(review_color_lidar_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${PCL_LIB_DIR})
+target_link_libraries(review_color_lidar_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${PCL_LIB_DIR} ${PCL_LIBRARIES})
 
 # add_executable(rgb_snapshot src/rgb_snapshot.cpp)
 # target_link_libraries(rgb_snapshot ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
