@@ -7,6 +7,8 @@
 
 extern std::vector<cv::Point2f> corners;
 extern std::vector<cv::Point2f> ir_corners;
+extern cv::Mat range_img;
+extern std::vector<float> depth_vector;
 
 
 
@@ -35,11 +37,11 @@ void plot_corners(IplImage *timg)
     int col_num = timg->width / 3;
     for(int i=0; i<corners.size(); ++i)
     {
-        char temp[16];
+        char temp[32];
         CvPoint pt = cvPoint(corners[i].x, corners[i].y);
         CvPoint next_pt = cvPoint(corners[i].x + col_num, corners[i].y);
         // ROS_INFO("%d: (%f,%f)", i, corners[i].x, corners[i].y);
-        sprintf(temp, "%d: (%d,%d)", i + 1, int(corners[i].x), int(corners[i].y));
+        sprintf(temp, "%d: (%d,%d) d: %f", i + 1, int(corners[i].x), int(corners[i].y), depth_vector[i]);
         cvPutText(timg, temp, pt, &font, CV_RGB(255,0,0));
         cvPutText(timg, temp, next_pt, &font, CV_RGB(255,0,0));
         cvCircle(timg, pt, 2, cvScalar(255, 0, 0, 0), CV_FILLED, CV_AA, 0);
@@ -72,6 +74,8 @@ void on_mouse(int event, int x, int y, int flags, void* img)
             p.x = x;
             p.y = y;
             ir_corners.push_back(p);
+            float depth = range_img.at<float>(y, x);
+            depth_vector.push_back(depth);
         }
         else if (x >= col_num )
         {
@@ -80,6 +84,9 @@ void on_mouse(int event, int x, int y, int flags, void* img)
             p.x = x;
             p.y = y;
             corners.push_back(p);
+            float depth = range_img.at<float>(y, x);
+            depth_vector.push_back(depth);
+        
         }
         else{
             cv::Point2f p;
@@ -95,6 +102,7 @@ void on_mouse(int event, int x, int y, int flags, void* img)
         if (x < 2 * col_num && corners.size() != 0)
         {
             corners.pop_back();
+            depth_vector.pop_back();
         }
         else if(x >= 2 * col_num && ir_corners.size() != 0){
             ir_corners.pop_back();

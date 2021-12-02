@@ -26,6 +26,10 @@
 #include <boost/foreach.hpp>
 #include "utils.h"
 
+#include <Eigen/Dense>
+#include <Eigen/Core>
+#include <opencv2/core/eigen.hpp>
+
 
 #define ROS_MIN_MAJOR 1
 #define ROS_MIN_MINOR 8
@@ -43,12 +47,16 @@ const bool IS_IMAGE_CORRECTION = true;
 
 std::vector<cv::Point2f> corners(0);
 std::vector<cv::Point2f> ir_corners(0);
+std::vector<float> depth_vector(0);
 
 cv_bridge::CvImagePtr cv_ptr;
 cv::Mat out_img;
 typedef pcl::PointXYZI PointType;
 typedef pcl::PointCloud<PointType> PointCloudXYZI;
 typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloudXYZRGB;
+
+cv::Mat range_img;      /**< record z(unit m)*/
+
 
 // PointCloudXYZI::Ptr pc_ptr_xyzi(new PointCloudXYZI); 
 // PointCloudXYZRGB::Ptr pc_ptr_xyzrgb(new PointCloudXYZRGB);
@@ -67,7 +75,6 @@ public:
     int ir_img_width;
     
     cv::Mat rgb_img;
-    cv::Mat range_img;      /**< record z(unit m)*/
     cv::Mat color_range_img;
     cv::Mat ir_img;
     cv::Mat mask_img;       /**count reprojection times*/
@@ -114,7 +121,7 @@ public:
   // get lidar 
   void get_lidar();
 
-  // fusion
+  // fusion get colored pointcloud and range image
   void fusion();
 
   // choose image correspondance points
@@ -124,6 +131,59 @@ public:
   void dlt();
   
 };
+
+void ImageLivoxFusion::dlt()
+{
+    if (corners.size() != ir_corners.size()){return;}
+    Eigen::Matrix3d int_mat;
+    cv::cv2eigen(this->intrinsic_matrix, int_mat);
+    Eigen::Matrix3d inv_int_mat = int_mat.inverse();
+    ROS_INFO_STREAM("int_mat = " << int_mat << "\n"); 
+    std::vector<Eigen::Vector3d> world_pos_array(0);
+    std::vector<Eigen::Vector2d> dst_pos_array(0);
+
+    for(int i=0; i < corners.size(); ++i)
+    {
+        int x = corners[i].x;
+        int y = corners[i].y;
+        // double depth = (double)range_img.at<float>(y, x);
+        double depth = depth_vector[i];
+
+        ROS_INFO("depth = %f", depth);
+        if(depth < 1e-3){continue;}
+        Eigen::Vector3d camera_pos((double) x, (double) y, 1.0);
+        Eigen::Vector3d world_pos = inv_int_mat * camera_pos;
+        Eigen::Vector2d dst_pos((double) ir_corners[i].x, (double) ir_corners[i].y);
+        world_pos = world_pos / world_pos(2) * depth;
+        ROS_INFO_STREAM("world_pos = " << world_pos.transpose() << "\n");
+        world_pos_array.push_back(world_pos);
+        dst_pos_array.push_back(dst_pos);
+    }
+    Eigen::MatrixXd A(dst_pos_array.size() * 2, 11);
+    Eigen::MatrixXd b(dst_pos_array.size() * 2, 1);
+    Eigen::MatrixXd solve(11, 1);
+    
+    for(int i=0; i < dst_pos_array.size(); ++i)
+    {
+        double X = world_pos_array[i](0);
+        double Y = world_pos_array[i](1);
+        double Z = world_pos_array[i](2);
+        double u = dst_pos_array[i](0);
+        double v = dst_pos_array[i](1);
+        A.row(2 * i) << X, Y, Z, 1.0, 0., 0., 0., -u*X , -u * Y , -u * Z;
+        A.row(2 * i + 1) << 0., 0., 0., 0., X, Y, Z, 1.0, -v*X, -v * Y, -v * Z;
+        // Eigen::MatrixXd block_up(1, 11);
+        // block_up << X << Y << Z << 1.0 << 0.0 << 0.0 << 0.0 << 0.0 << -u*X << -u * Y << -u * Z;
+        // Eigen::MatrixXd block_down(1, 11);
+        // block_down << 0. << 0. << 0. << 0. << X << Y << Z << 1.0 << -v*X << -v * Y << -v * Z;
+        // A.block(i * 2, 0, 1, 11) = block_up;
+        // A.block(i * 2 + 1, 8, 1, 11) << block_down;
+        b(i * 2, 0) = u;
+        b(i * 2 + 1, 0) = v;
+    }
+    solve = A.colPivHouseholderQr().solve(b);
+    ROS_INFO_STREAM("ANSWER = " << solve << "\n");
+}
 
 void ImageLivoxFusion::choose_corners()
 {
@@ -154,7 +214,7 @@ void ImageLivoxFusion::choose_corners()
         cout << "No input corners, end process" << endl;
         return ;
     }
-
+    this->dlt();
 
 };
 
@@ -166,9 +226,8 @@ int ImageLivoxFusion::get_data_and_fusion()
     ROS_INFO("save_dir = %s", save_dir.c_str());
     if(!IsFolderExist(save_dir.c_str())){ROS_ERROR("save dir doesn't exist"); return -1;}
     ROS_INFO("save dir exists!!");
-    lidar_file_dir = save_dir + prefix + "_lidar.bag";
     // lidar_file_dir = save_dir + prefix + "_msg.bag";
-    
+    lidar_file_dir = save_dir + prefix + "_lidar.bag";    
     rgb_file_dir = save_dir + prefix + "_rgb.jpg";
     ir_file_dir = save_dir + prefix + "_ir.jpg";
     
