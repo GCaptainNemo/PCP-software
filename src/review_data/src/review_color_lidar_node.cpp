@@ -48,6 +48,7 @@ const bool IS_IMAGE_CORRECTION = true;
 std::vector<cv::Point2f> corners(0);
 std::vector<cv::Point2f> ir_corners(0);
 std::vector<float> depth_vector(0);
+std::vector<float> dense_depth_vector(0);
 
 cv_bridge::CvImagePtr cv_ptr;
 cv::Mat out_img;
@@ -56,7 +57,10 @@ typedef pcl::PointCloud<PointType> PointCloudXYZI;
 typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloudXYZRGB;
 
 cv::Mat range_img;      /**< record z(unit m)*/
-
+cv::Mat dense_range_img;
+cv::Mat color_range_img;
+cv::Mat color_dense_range_img;
+    
 
 // PointCloudXYZI::Ptr pc_ptr_xyzi(new PointCloudXYZI); 
 // PointCloudXYZRGB::Ptr pc_ptr_xyzrgb(new PointCloudXYZRGB);
@@ -75,7 +79,6 @@ public:
     int ir_img_width;
     
     cv::Mat rgb_img;
-    cv::Mat color_range_img;
     cv::Mat ir_img;
     cv::Mat mask_img;       /**count reprojection times*/
 
@@ -153,8 +156,8 @@ void ImageLivoxFusion::dlt()
         if(depth < 1e-3){continue;}
         Eigen::Vector3d camera_pos((double) x, (double) y, 1.0);
         Eigen::Vector3d world_pos = inv_int_mat * camera_pos;
-        Eigen::Vector2d dst_pos((double) ir_corners[i].x, (double) ir_corners[i].y);
         world_pos = world_pos / world_pos(2) * depth;
+        Eigen::Vector2d dst_pos((double) ir_corners[i].x, (double) ir_corners[i].y);
         ROS_INFO_STREAM("world_pos = " << world_pos.transpose() << "\n");
         world_pos_array.push_back(world_pos);
         dst_pos_array.push_back(dst_pos);
@@ -170,33 +173,81 @@ void ImageLivoxFusion::dlt()
         double Z = world_pos_array[i](2);
         double u = dst_pos_array[i](0);
         double v = dst_pos_array[i](1);
-        A.row(2 * i) << X, Y, Z, 1.0, 0., 0., 0., -u*X , -u * Y , -u * Z;
+        A.row(2 * i) << X, Y, Z, 1.0, 0., 0., 0., 0., -u*X , -u * Y , -u * Z;
         A.row(2 * i + 1) << 0., 0., 0., 0., X, Y, Z, 1.0, -v*X, -v * Y, -v * Z;
-        // Eigen::MatrixXd block_up(1, 11);
-        // block_up << X << Y << Z << 1.0 << 0.0 << 0.0 << 0.0 << 0.0 << -u*X << -u * Y << -u * Z;
-        // Eigen::MatrixXd block_down(1, 11);
-        // block_down << 0. << 0. << 0. << 0. << X << Y << Z << 1.0 << -v*X << -v * Y << -v * Z;
-        // A.block(i * 2, 0, 1, 11) = block_up;
-        // A.block(i * 2 + 1, 8, 1, 11) << block_down;
         b(i * 2, 0) = u;
         b(i * 2 + 1, 0) = v;
     }
     solve = A.colPivHouseholderQr().solve(b);
     ROS_INFO_STREAM("ANSWER = " << solve << "\n");
+    Eigen::MatrixXd project_mat(3, 4);
+    project_mat << solve(0, 0), solve(1, 0), solve(2, 0), solve(3, 0), 
+                   solve(4, 0), solve(5, 0), solve(6, 0), solve(7, 0), 
+                   solve(8, 0), solve(9, 0), solve(10, 0), 1.0;
+    ROS_INFO_STREAM("project_mat = " << project_mat << "\n");
+    cv::Mat proj_mat(range_img.rows, range_img.cols, CV_8UC3);
+    for(int row = 0; row < range_img.rows; ++row)
+    {
+        for(int col = 0; col < range_img.cols; ++col)
+        {
+            float depth = range_img.at<float>(row, col);
+            if (depth < 1e-3){continue;}
+            Eigen::Vector3d camera_pos((double) col, (double) row, 1.0);
+            Eigen::Vector3d world_pos = inv_int_mat * camera_pos;
+            world_pos = world_pos / world_pos(2) * depth;
+            Eigen::VectorXd hetero_world_pos(4, 1);
+            hetero_world_pos << world_pos, 1.0;
+            Eigen::Vector3d proj_pos = project_mat * hetero_world_pos;
+            double x = proj_pos(0) / proj_pos(2);
+            double y = proj_pos(1) / proj_pos(2);
+            if(x >= 0 && x < range_img.cols && y >= 0 && y < range_img.rows)
+            {
+                int proj_row = (int) (y + 0.5);
+                int proj_col = (int) (x + 0.5);
+                if(proj_row < range_img.rows && proj_col < range_img.cols)
+                {
+                    proj_mat.at<cv::Vec3b>(proj_row, proj_col)[2] = rgb_img.at<cv::Vec3b>(row, col)[2];
+                    proj_mat.at<cv::Vec3b>(proj_row, proj_col)[1] = rgb_img.at<cv::Vec3b>(row, col)[1];
+                    proj_mat.at<cv::Vec3b>(proj_row, proj_col)[0] = rgb_img.at<cv::Vec3b>(row, col)[0];
+                }
+            }
+        }
+    }
+    cv::imshow("proj_mat", proj_mat);
+    cv::waitKey(0);
+
 }
 
 void ImageLivoxFusion::choose_corners()
 {
+    std::string blur_type = std::string("gaussian");
+    bool extrapolate = true;
+    range_image_complete(range_img, dense_range_img, extrapolate, blur_type);
+    cv::Mat normalize_dense_range_img;
+    cv::normalize(dense_range_img, normalize_dense_range_img, 1.0, 0, cv::NORM_MINMAX);
+    cv::Mat dense_range_image_8uc1;
+    normalize_dense_range_img.convertTo(dense_range_image_8uc1, CV_8UC1,255.0);
+    cv::applyColorMap(dense_range_image_8uc1, color_dense_range_img, cv::COLORMAP_JET);
+    
     // ///////////////////////////////////////////////////////
     // choose corner
     // //////////////////////////////////////////////////////
-    std::vector<cv::Mat> hImgs;
-    hImgs.push_back(color_range_img);
-    hImgs.push_back(rgb_img);
-    hImgs.push_back(ir_img);
-
+    std::vector<cv::Mat> vImg1;
+    std::vector<cv::Mat> vImg2;
+    vImg1.push_back(rgb_img);
+    vImg1.push_back(ir_img);
+    vImg2.push_back(color_range_img);
+    vImg2.push_back(color_dense_range_img);
+    std::vector<cv::Mat> hImg;
+    cv::Mat cat_img_1;
+    cv::Mat cat_img_2;
+    cv::vconcat(vImg1, cat_img_1);
+    cv::vconcat(vImg2, cat_img_2);
+    hImg.push_back(cat_img_1);
+    hImg.push_back(cat_img_2);
     cv::Mat cat_img;
-    cv::hconcat(hImgs, cat_img);
+    cv::hconcat(hImg, cat_img);
+
     // cv::Mat clone_src_img = rgb_img.clone();
     IplImage *img = new IplImage(cat_img);
     cvNamedWindow("src", 1);
@@ -360,14 +411,11 @@ void ImageLivoxFusion::get_lidar()
     for(rosbag::MessageInstance const msg: view_in_bag) 
     {
         livox_ros_driver::CustomMsgPtr livox_msg = msg.instantiate<livox_ros_driver::CustomMsg>();
-        // sensor_msgs::PointCloud2ConstPtr s = msg.instantiate<sensor_msgs::PointCloud2>();
         // sensor_msgs::PointCloud2ConstPtr livox_msg = msg.instantiate<sensor_msgs::PointCloud2>();
         
         if (livox_msg!= NULL)
         {
-            // ROS_INFO("topic = livox/lidar");
             for (int i = 0; i < livox_msg->point_num; ++i) {
-                // PointXYZINormal
                 PointType pt;
                 pt.x = livox_msg->points[i].x;
                 pt.y = livox_msg->points[i].y;
@@ -391,7 +439,6 @@ void ImageLivoxFusion::get_lidar()
     }
     ROS_INFO("lidar point cloud num = %d", pc_ptr_xyzi->points.size());
     in_bag.close();
-
 }
 
 void ImageLivoxFusion::fusion()
