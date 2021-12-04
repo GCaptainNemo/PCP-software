@@ -223,6 +223,9 @@ void ImageLivoxFusion::choose_corners()
     std::string blur_type = std::string("gaussian");
     bool extrapolate = true;
     range_image_complete(range_img, dense_range_img, extrapolate, blur_type);
+    // matwrite("raw_range_img.bin", range_img);
+    // matread("raw_range_img.bin", range_img);
+    return;
     cv::Mat normalize_dense_range_img;
     cv::normalize(dense_range_img, normalize_dense_range_img, 1.0, 0, cv::NORM_MINMAX);
     cv::Mat dense_range_image_8uc1;
@@ -238,11 +241,11 @@ void ImageLivoxFusion::choose_corners()
     vImg1.push_back(ir_img);
     vImg2.push_back(color_range_img);
     vImg2.push_back(color_dense_range_img);
-    std::vector<cv::Mat> hImg;
     cv::Mat cat_img_1;
     cv::Mat cat_img_2;
     cv::vconcat(vImg1, cat_img_1);
     cv::vconcat(vImg2, cat_img_2);
+    std::vector<cv::Mat> hImg;
     hImg.push_back(cat_img_1);
     hImg.push_back(cat_img_2);
     cv::Mat cat_img;
