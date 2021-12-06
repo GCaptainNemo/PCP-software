@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(review_data)
+project(calib_data)
 set(CMAKE_BUILD_TYPE "Release")
 set(CMAKE_CXX_FLAGS "-std=c++11")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g")
@@ -20,8 +20,8 @@ find_package(PCL REQUIRED COMPONENTS common io visualization )
 set(EIGEN3_INCLUDE_DIR /usr/local/include/include/eigen3)
 include_directories(${catkin_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${PCL_INCLUDE_DIRS} ${EIGEN3_INCLUDE_DIR} ./include/ ../common_utils/)
 
-add_executable(review_color_lidar_node src/review_color_lidar_node.cpp src/utils.cpp ../common_utils/io_utils.cpp)
-target_link_libraries(review_color_lidar_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${PCL_LIB_DIR} ${PCL_LIBRARIES})
+add_executable(calib_node src/calib.cpp ../common_utils/io_utils.cpp)
+target_link_libraries(calib_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${PCL_LIB_DIR} ${PCL_LIBRARIES})
 
 # add_executable(rgb_snapshot src/rgb_snapshot.cpp)
 # target_link_libraries(rgb_snapshot ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})

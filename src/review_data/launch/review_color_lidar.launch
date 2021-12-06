@@ -3,9 +3,9 @@
 	<param name="prefix" type="string" value="0003" />	
 	<!--param name="save_dir" type="string" value="/home/why/" /-->
 	<!--param name="prefix" type="string" value="static" /-->
-	<!--args: is_save is_visualize-->        
+	<!--args: is_save, is_visualize-->        
 	<node name="review_color_lidar_node" output="screen" pkg="review_data" required="true" type="review_color_lidar_node" args="false false">
-		<rosparam file="$(find review_data)/config/param2.yaml" command="load"/>
+		<rosparam file="$(find review_data)/../common_utils/config/param3.yaml" command="load"/>
 	</node>
 	<!--node pkg="rosbag" type="play" name="lidar_play" required="false" args="/home/why/static_msg.bag" output="screen"/-->
 </launch>

@@ -1,0 +1,5 @@
+<launch>
+	<node pkg="calib_data" type="calib_node" name="calib_node"  output="screen">
+		<rosparam file="$(find calib_data)/../common_utils/config/param3.yaml" command="load"/>	
+    	</node>
+</launch>

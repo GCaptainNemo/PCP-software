@@ -25,6 +25,7 @@
 
 #include <boost/foreach.hpp>
 #include "utils.h"
+#include "io_utils.h"
 
 #include <Eigen/Dense>
 #include <Eigen/Core>
@@ -42,6 +43,10 @@
 #endif
 
 #define foreach BOOST_FOREACH
+typedef pcl::PointXYZI PointType;
+typedef pcl::PointCloud<PointType> PointCloudXYZI;
+typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloudXYZRGB;
+
 const bool IS_FILTER = true;
 const bool IS_IMAGE_CORRECTION = true;
 
@@ -52,9 +57,7 @@ std::vector<float> dense_depth_vector(0);
 
 cv_bridge::CvImagePtr cv_ptr;
 cv::Mat out_img;
-typedef pcl::PointXYZI PointType;
-typedef pcl::PointCloud<PointType> PointCloudXYZI;
-typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloudXYZRGB;
+
 
 cv::Mat range_img;      /**< record z(unit m)*/
 cv::Mat dense_range_img;
@@ -150,7 +153,8 @@ void ImageLivoxFusion::dlt()
         int x = corners[i].x;
         int y = corners[i].y;
         // double depth = (double)range_img.at<float>(y, x);
-        double depth = depth_vector[i];
+        // double depth = depth_vector[i];
+        double depth = dense_depth_vector[i];
 
         ROS_INFO("depth = %f", depth);
         if(depth < 1e-3){continue;}
@@ -225,7 +229,6 @@ void ImageLivoxFusion::choose_corners()
     range_image_complete(range_img, dense_range_img, extrapolate, blur_type);
     // matwrite("raw_range_img.bin", range_img);
     // matread("raw_range_img.bin", range_img);
-    return;
     cv::Mat normalize_dense_range_img;
     cv::normalize(dense_range_img, normalize_dense_range_img, 1.0, 0, cv::NORM_MINMAX);
     cv::Mat dense_range_image_8uc1;
@@ -475,8 +478,8 @@ void ImageLivoxFusion::fusion()
             int column = int(x + 0.5);
             if (row < rgb_img_height && column < rgb_img_width)
             {
-                // ROS_INFO("row = %d, column =%d", row, column);
-
+                // ROS_INFO("row = %d, column  =%d", row, column);
+                
                 pointRGB.r = rgb_img.at<cv::Vec3b>(row, column)[2];
                 pointRGB.g = rgb_img.at<cv::Vec3b>(row, column)[1];
                 pointRGB.b = rgb_img.at<cv::Vec3b>(row, column)[0];
@@ -492,6 +495,7 @@ void ImageLivoxFusion::fusion()
           }
         }
     }
+    ROS_INFO("finish pc_ptr");
     pc_ptr_xyzrgb->width = 1;
     pc_ptr_xyzrgb->height = pc_ptr_xyzrgb->points.size();
     ROS_INFO("pc_xyzrgb.size = %d", pc_ptr_xyzrgb->points.size());

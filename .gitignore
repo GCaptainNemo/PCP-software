@@ -2,4 +2,5 @@ build/
 .catkin_workspace
 devel/
 src/CMakeLists.txt
+src/.vscode/
 
