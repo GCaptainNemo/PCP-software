@@ -1,4 +1,6 @@
 <launch>
+	<param name="lidar_dir" value="/media/why/LENOVO_USB_HDD/ir_rgb_registration_data_collect/0003_lidar.bag" />
+	<param name="img_dir" value="/media/why/LENOVO_USB_HDD/ir_rgb_registration_data_collect/0003_rgb.jpg" />
 	<node pkg="calib_data" type="calib_node" name="calib_node"  output="screen">
 		<rosparam file="$(find calib_data)/../common_utils/config/param3.yaml" command="load"/>	
     	</node>

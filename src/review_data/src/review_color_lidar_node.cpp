@@ -68,6 +68,48 @@ cv::Mat color_dense_range_img;
 // PointCloudXYZI::Ptr pc_ptr_xyzi(new PointCloudXYZI); 
 // PointCloudXYZRGB::Ptr pc_ptr_xyzrgb(new PointCloudXYZRGB);
 
+void mapJet(double v, double vmin, double vmax, uint8_t &r, uint8_t &g,
+            uint8_t &b) {
+  r = 255;
+  g = 255;
+  b = 255;
+
+  if (v < vmin) {
+    v = vmin;
+  }
+
+  if (v > vmax) {
+    v = vmax;
+  }
+
+  double dr, dg, db;
+
+  if (v < 0.1242) {
+    db = 0.504 + ((1. - 0.504) / 0.1242) * v;
+    dg = dr = 0.;
+  } else if (v < 0.3747) {
+    db = 1.;
+    dr = 0.;
+    dg = (v - 0.1242) * (1. / (0.3747 - 0.1242));
+  } else if (v < 0.6253) {
+    db = (0.6253 - v) * (1. / (0.6253 - 0.3747));
+    dg = 1.;
+    dr = (v - 0.3747) * (1. / (0.6253 - 0.3747));
+  } else if (v < 0.8758) {
+    db = 0.;
+    dr = 1.;
+    dg = (0.8758 - v) * (1. / (0.8758 - 0.6253));
+  } else {
+    db = 0.;
+    dg = 0.;
+    dr = 1. - (v - 0.8758) * ((1. - 0.504) / (1. - 0.8758));
+  }
+
+  r = (uint8_t)(255 * dr);
+  g = (uint8_t)(255 * dg);
+  b = (uint8_t)(255 * db);
+}
+
 
 class ImageLivoxFusion
 {
@@ -84,6 +126,7 @@ public:
     cv::Mat rgb_img;
     cv::Mat ir_img;
     cv::Mat mask_img;       /**count reprojection times*/
+    cv::Mat intensity_img;
 
 public:
     PointCloudXYZI::Ptr pc_ptr_xyzi; 
@@ -188,19 +231,27 @@ void ImageLivoxFusion::dlt()
     project_mat << solve(0, 0), solve(1, 0), solve(2, 0), solve(3, 0), 
                    solve(4, 0), solve(5, 0), solve(6, 0), solve(7, 0), 
                    solve(8, 0), solve(9, 0), solve(10, 0), 1.0;
+    project_mat << 766.84,  -336.343,  -118.382,   793.273, 
+    251.936,   85.3765,  -79.0888,   579.974, 
+    0.539377,  -0.21987, -0.161199, 1;
     ROS_INFO_STREAM("project_mat = " << project_mat << "\n");
-    cv::Mat proj_mat(range_img.rows, range_img.cols, CV_8UC3);
+    cv::Mat regist_rgb = cv::Mat::zeros(range_img.rows, range_img.cols, CV_8UC3);
+    
+    ROS_INFO("row = %d, col=%d", range_img.rows, range_img.cols);
+
     for(int row = 0; row < range_img.rows; ++row)
     {
         for(int col = 0; col < range_img.cols; ++col)
         {
-            float depth = range_img.at<float>(row, col);
+            float depth = dense_range_img.at<float>(row, col);
+            // float depth = range_img.at<float>(row, col);
             if (depth < 1e-3){continue;}
             Eigen::Vector3d camera_pos((double) col, (double) row, 1.0);
             Eigen::Vector3d world_pos = inv_int_mat * camera_pos;
-            world_pos = world_pos / world_pos(2) * depth;
+            world_pos = world_pos / world_pos(2) * depth;   
             Eigen::VectorXd hetero_world_pos(4, 1);
             hetero_world_pos << world_pos, 1.0;
+            
             Eigen::Vector3d proj_pos = project_mat * hetero_world_pos;
             double x = proj_pos(0) / proj_pos(2);
             double y = proj_pos(1) / proj_pos(2);
@@ -210,14 +261,20 @@ void ImageLivoxFusion::dlt()
                 int proj_col = (int) (x + 0.5);
                 if(proj_row < range_img.rows && proj_col < range_img.cols)
                 {
-                    proj_mat.at<cv::Vec3b>(proj_row, proj_col)[2] = rgb_img.at<cv::Vec3b>(row, col)[2];
-                    proj_mat.at<cv::Vec3b>(proj_row, proj_col)[1] = rgb_img.at<cv::Vec3b>(row, col)[1];
-                    proj_mat.at<cv::Vec3b>(proj_row, proj_col)[0] = rgb_img.at<cv::Vec3b>(row, col)[0];
+                    regist_rgb.at<cv::Vec3b>(proj_row, proj_col)[2] = rgb_img.at<cv::Vec3b>(row, col)[2];
+                    regist_rgb.at<cv::Vec3b>(proj_row, proj_col)[1] = rgb_img.at<cv::Vec3b>(row, col)[1];
+                    regist_rgb.at<cv::Vec3b>(proj_row, proj_col)[0] = rgb_img.at<cv::Vec3b>(row, col)[0];
                 }
             }
         }
     }
-    cv::imshow("proj_mat", proj_mat);
+    std::vector<cv::Mat> vImg;
+    vImg.push_back(ir_img);
+    vImg.push_back(regist_rgb);
+    cv::Mat cat_img;
+    cv::vconcat(vImg, cat_img);
+    ROS_INFO("start show!");
+    cv::imshow("regist_rgb", cat_img);
     cv::waitKey(0);
 
 }
@@ -242,7 +299,21 @@ void ImageLivoxFusion::choose_corners()
     std::vector<cv::Mat> vImg2;
     vImg1.push_back(rgb_img);
     vImg1.push_back(ir_img);
-    vImg2.push_back(color_range_img);
+    // vImg2.push_back(color_range_img);
+    cv::Mat map_img = cv::Mat::zeros(rgb_img.rows, rgb_img.cols, CV_8UC3);
+    for (int x = 0; x < map_img.cols; x++) {
+        for (int y = 0; y < map_img.rows; y++) {
+        uint8_t r, g, b;
+        float norm = intensity_img.at<uchar>(y, x) / 256.0;
+        mapJet(norm, 0, 1, r, g, b);
+        map_img.at<cv::Vec3b>(y, x)[0] = b;
+        map_img.at<cv::Vec3b>(y, x)[1] = g;
+        map_img.at<cv::Vec3b>(y, x)[2] = r;
+        }
+    }
+    cv::Mat merge_img = 0.5 * map_img + 0.8 * rgb_img;
+    vImg2.push_back(merge_img);
+    
     vImg2.push_back(color_dense_range_img);
     cv::Mat cat_img_1;
     cv::Mat cat_img_2;
@@ -254,7 +325,7 @@ void ImageLivoxFusion::choose_corners()
     cv::Mat cat_img;
     cv::hconcat(hImg, cat_img);
 
-    // cv::Mat clone_src_img = rgb_img.clone();
+    // edited by why
     IplImage *img = new IplImage(cat_img);
     cvNamedWindow("src", 1);
     cvSetMouseCallback("src", on_mouse, img);
@@ -262,11 +333,9 @@ void ImageLivoxFusion::choose_corners()
     
     char *obj_key = "q";
     while ((char)cv::waitKey(1) != *obj_key) {}
-    // cvWaitKey(0);
-    // cvDestroyAllWindows();
-    delete img;
+    cvDestroyAllWindows();
+    // delete img;
     // cvReleaseImage(&img);
-    // corners-> std::vector<cv::Point>
     if (!corners.size()) {
         cout << "No input corners, end process" << endl;
         return ;
@@ -366,6 +435,7 @@ void ImageLivoxFusion::set_param()
   rgb_img_height = img_size[1];
   range_img = cv::Mat::zeros(rgb_img_height, rgb_img_width, CV_32FC1);
   mask_img = cv::Mat::zeros(rgb_img_height, rgb_img_width, CV_8UC1);
+  intensity_img = cv::Mat::zeros(rgb_img_height, rgb_img_width, CV_16UC1);
   // convert cv::Mat
   cv::Mat dist_array(5, 1, CV_64F, &dist[0]);
   this->dist_matrix = dist_array.clone();
@@ -447,6 +517,8 @@ void ImageLivoxFusion::get_lidar()
     in_bag.close();
 }
 
+
+
 void ImageLivoxFusion::fusion()
 {
     ROS_INFO("------------ START FUSION! ------------");
@@ -460,6 +532,7 @@ void ImageLivoxFusion::fusion()
         pointRGB.x = pc_ptr_xyzi->points[i].x;
         pointRGB.y = pc_ptr_xyzi->points[i].y;
         pointRGB.z = pc_ptr_xyzi->points[i].z;
+        float intensity = pc_ptr_xyzi->points[i].intensity;
         double a_[4] = { pointRGB.x, pointRGB.y, pointRGB.z, 1.0 };
         cv::Mat pos(4, 1, CV_64F, a_);
         cv::Mat newpos(this->transform_matrix * pos);
@@ -489,12 +562,20 @@ void ImageLivoxFusion::fusion()
                 {
                     range_img.at<float>(row, column) = pointRGB.x;
                     mask_img.at<int>(row, column) += 1;
+                    if (intensity > 100) {
+                        intensity = 65535;
+                    } else {
+                        intensity = (intensity / 150.0) * 65535;
+                    }
+                    intensity_img.at<uint16_t>(row, column) = (uint16_t) intensity;
+
                 }
                 pc_ptr_xyzrgb->push_back(pointRGB);
             }
           }
         }
     }
+    intensity_img.convertTo(intensity_img, CV_8UC1, 1 / 256.0);
     ROS_INFO("finish pc_ptr");
     pc_ptr_xyzrgb->width = 1;
     pc_ptr_xyzrgb->height = pc_ptr_xyzrgb->points.size();
