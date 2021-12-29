@@ -14,7 +14,7 @@
 
 
 
-## 使用方法
+## 二、使用方法
 
 ### 1. 发布数据
 
@@ -22,12 +22,32 @@
 roslaunch collect_data publish_data.launch
 ```
 
-### 2. 记录一帧数据
+### 2. 记录数据
+
+##### 2.1 更改launch文件
+
+**备注:**更改collect_data.launch中的文件保存路径，collect_calib.launch中的文件前缀
 
 ```
 python3 modify_name.py
+```
+
+##### 2.2 抓取激光雷达、可见光、热红外数据
+
+```
 roslaunch collect_data collect_data.launch
 ```
 
+##### 2.3 抓取可见光、热红外数据(用来标定热红外、可见光相机外参)
+
+```
+roslaunch collect_data collect_calib.launch
+python3 modify_calib_name.py
+```
+
 or
+
+```
+sh ./collect_calib.sh
+```
 

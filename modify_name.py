@@ -18,6 +18,15 @@ def getFileName(save_dir):
     return prefix
 
 
+def modify_collect_calib_launch(file_prefix):
+    dom = ET.parse('./src/collect_data/launch/collect_calib.launch')
+    root = dom.getroot()
+    itemlist = root.findall('param')
+    itemlist[1].set("value", file_prefix + "_1_")
+    dom.write("./src/collect_data/launch/collect_calib.launch") 
+    
+
+
 def main():
     dom = ET.parse('./src/collect_data/launch/collect_data.launch')
     #得到文档元素对象
@@ -41,6 +50,8 @@ def main():
     file_prefix = getFileName(save_dir)
     print("file_prefix = ", file_prefix)
     itemlist[1].set("value", file_prefix)
+    # modify collect_calib.launch
+    modify_collect_calib_launch(file_prefix) 
 
     # ######################################################
     item_lst = root.findall('node')
@@ -52,7 +63,8 @@ def main():
     new_args = lst[0] + "-O " + save_dir + file_prefix + "_lidar"
     item_lst[2].set("args", new_args)
     # save
-    dom.write("./src/collect_data/launch/collect_data.launch")   
+    dom.write("./src/collect_data/launch/collect_data.launch")  
+    
 
 if __name__ == "__main__":
     res = main()
