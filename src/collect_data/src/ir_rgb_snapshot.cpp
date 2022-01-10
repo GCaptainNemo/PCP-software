@@ -93,7 +93,7 @@ int IsFileExist(const char* path)
 
 void getFileName(const std::string & save_file_dir, const std::string & prefix)
 {
-      
+  ROS_INFO("name = %s", ir_file_name.c_str());
   int index = 100;
   
   
@@ -101,8 +101,6 @@ void getFileName(const std::string & save_file_dir, const std::string & prefix)
   {
       ir_file_name = save_file_dir + prefix + std::string("_") + std::to_string(index) + std::string("__ir.jpg");
       rgb_file_name = save_file_dir + prefix + std::string("_") + std::to_string(index) + std::string("__rgb.jpg");
-
-      ROS_INFO("file_name = %s", ir_file_name.c_str());
       if (IsFileExist(ir_file_name.c_str()) || IsFileExist(rgb_file_name.c_str()))
       {
         index += 1; 
@@ -110,39 +108,48 @@ void getFileName(const std::string & save_file_dir, const std::string & prefix)
         rgb_file_name = save_file_dir + prefix + std::string("_") + std::to_string(index) + std::string("__rgb.jpg");
         break;
       }
-      else{
+      else if(index > 1){
         index -= 1; 
       }
+      else{
+        // index = 1
+        ir_file_name = save_file_dir + prefix + std::string("_") + std::to_string(index) + std::string("__ir.jpg");
+        rgb_file_name = save_file_dir + prefix + std::string("_") + std::to_string(index) + std::string("__rgb.jpg");
+        break;  
+      }
   }
-  ROS_INFO("name = %s", ir_file_name.c_str());
 }
 
 
 
-int main(int argc, char **argv) {
-  if (argc != 2){ROS_INFO("please enter output option (calib or data)!!"); return -1;}
-  const char * output_option = argv[1];
-  
+int main(int argc, char **argv) {  
   ros::init(argc, argv, "ir_snapshot");
   ros::NodeHandle nh;
   std::string save_dir;
   std::string prefix;
+  std::string output_option;
   nh.getParam("save_dir",save_dir);
   nh.getParam("prefix", prefix);
+  nh.getParam("output_option", output_option);
   ROS_INFO("IR snapshot node save_dir = %s", save_dir.c_str());
   if(!IsFolderExist(save_dir.c_str())){ROS_ERROR("save dir doesn't exist"); return -1;}
   ROS_INFO("save dir exists!!");
   
   std::string file_dir;
-  if(strcmp(output_option, "calib") == 0){
+  if(output_option == "calib"){
      // calib 模式下，子前缀会动态更新
      getFileName(save_dir, prefix);
   }
-  else if(strcmp(output_option, "data") == 0){
+  else if(output_option == "data"){
       ir_file_name = save_dir + prefix + "_ir.jpg";
       rgb_file_name = save_dir + prefix + "_rgb.jpg";
   }
-  ROS_INFO("IR snapshot node file_dir = %s", file_dir.c_str());
+  else{
+    printf("[error] wrong output options!\n");
+    return -1;
+  }
+  ROS_INFO("IR snapshot node file_dir = %s\n", ir_file_name.c_str());
+  ROS_INFO("Rgb snapshot node file_dir = %s\n", rgb_file_name.c_str());
 
   image_transport::ImageTransport it(nh);
   image_transport::Subscriber ir_sub = it.subscribe("/usb_cam/image_raw", 10, ir_callback);

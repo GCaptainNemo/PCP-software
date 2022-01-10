@@ -1,7 +1,7 @@
 <launch>
 	<param name="save_dir" type="string" value="/media/why/LENOVO_USB_HDD/ir_rgb_registration_data_collect/" />
 	<param name="prefix" type="string" value="0007" />
-	
-	<node name="ir_rgb_snapshot_data" output="screen" pkg="collect_data" required="false" type="ir_snapshot" />
+	<param name="output_option" type="string" value="data"/>
+	<node name="ir_rgb_snapshot_data" output="screen" pkg="collect_data" required="false" type="ir_rgb_snapshot" />
 	<node args="/livox/lidar/ --duration=10 -O /media/why/LENOVO_USB_HDD/ir_rgb_registration_data_collect/0007_lidar" name="rosbag_record_lidar" output="screen" pkg="rosbag" required="false" type="record" />
 </launch>

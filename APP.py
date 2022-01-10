@@ -187,7 +187,7 @@ class MainWindow(QtWidgets.QWidget):
         """
         new_img = self.subscribe_thread.ir_img.copy()
         dst_img = QtGui.QImage(new_img, new_img.shape[1],
-                                 new_img.shape[0], QtGui.QImage.Format_Grayscale)
+                                 new_img.shape[0], QtGui.QImage.Format_RGB888)
         self.ir_widget.pixmap = QtGui.QPixmap.fromImage(dst_img)
         self.ir_widget.repaint()
 
@@ -195,7 +195,6 @@ class MainWindow(QtWidgets.QWidget):
         """
         slot function
         """
-        print("in update rgb img")
         new_img = self.subscribe_thread.rgb_img.copy()
         new_img = cv2.cvtColor(new_img, cv2.COLOR_BGR2RGB)
         # new_img = new_img[:, :, ::-1]
