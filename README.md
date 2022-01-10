@@ -14,7 +14,7 @@
 
 
 
-## 二、使用方法
+## 二、命令行使用方法
 
 ### 1. 发布数据
 
@@ -50,4 +50,31 @@ or
 ```
 sh ./collect_calib.sh
 ```
+
+
+
+## 三、客户端使用方法
+
+````
+pip install catkin-tools
+pip install rospkg defusedxml
+````
+
+
+
+## 四、参考资料
+
+[1] [python中调用launch文件](https://blog.csdn.net/bluewhalerobot/article/details/80952751)
+
+[2] [python3运行ROS节点](https://blog.csdn.net/heroacool/article/details/118497979)
+
+[3] [PyQT5订阅图像节点](https://blog.csdn.net/huoxingrenhdh/article/details/116753581)
+
+[4] [Ros melodic python3环境解决cv_bridge问题](https://blog.csdn.net/weixin_42675603/article/details/107785376)
+
+**备注:**`cv_bridge`是将image_msg转opencv image的库，但在python3中存在问题，需要重新编译(还是不行。。。)。
+
+[5] [用自定义数据类型解决cv_bridge问题](https://blog.csdn.net/lizhiyuanbest/article/details/108022588)
+
+[6] [发布和订阅自定义msg数组](https://blog.csdn.net/weixin_30847939/article/details/99386250?utm_medium=distribute.pc_relevant.none-task-blog-2~default~baidujs_baidulandingword~default-0.no_search_link&spm=1001.2101.3001.4242.1&utm_relevant_index=3)
 

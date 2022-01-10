@@ -1,6 +1,6 @@
 <launch>
 	<param name="save_dir" type="string" value="/media/why/LENOVO_USB_HDD/ir_rgb_registration_data_collect/" />
-	<param name="prefix" type="string" value="0002_3_" />
+	<param name="prefix" type="string" value="0006_1_" />
 	<node name="ir_snapshot" output="screen" pkg="collect_data" required="false" type="ir_snapshot" />
 	<node name="rgb_snapshot" output="screen" pkg="collect_data" required="false" type="rgb_snapshot" />
 </launch>

@@ -1,5 +1,4 @@
 <launch>
-	<!-->with visualize node<-->
 	<include file="$(find livox_ros_driver)/launch/livox_lidar_msg.launch">
 	</include>
 	<include file="$(find hikvision_ros)/launch/hik.launch">
@@ -10,10 +9,6 @@
 	</include-->
         <node pkg="image_view" type="image_view" name="rgb_image_view"   respawn="false" output="screen">
     		<remap from="image" to="/hik_cam_node/hik_camera"/>
-    		<param name="autosize" value="true" />
-  	</node>
-	<node pkg="image_view" type="image_view" name="ir_image_view"  respawn="false" output="screen">
-    		<remap from="image" to="/usb_cam/image_raw"/>
     		<param name="autosize" value="true" />
   	</node>
 </launch>
