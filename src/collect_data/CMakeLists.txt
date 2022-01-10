@@ -25,11 +25,8 @@ catkin_package(
 
 include_directories(${catkin_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
 
-add_executable(ir_snapshot src/ir_snapshot.cpp)
-target_link_libraries(ir_snapshot ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
-
-add_executable(rgb_snapshot src/rgb_snapshot.cpp)
-target_link_libraries(rgb_snapshot ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
+add_executable(ir_rgb_snapshot src/ir_rgb_snapshot.cpp)
+target_link_libraries(ir_rgb_snapshot ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
 
 add_executable(ir_rgb_remap src/ir_rgb_remap.cpp)
 target_link_libraries(ir_rgb_remap ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})

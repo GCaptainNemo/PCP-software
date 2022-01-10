@@ -1,7 +1,7 @@
+#!/usr/bin/env python3
+# coding=UTF-8
 import os
-import PyQt5
-from PyQt5 import QtGui, QtCore, QtWidgets
-import qdarkstyle
+
 import sys
 import numpy as np
 import xml.etree.ElementTree as ET
@@ -12,6 +12,9 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
 import cv2
 from PyQt5.QtCore import QThread, pyqtSignal,pyqtSlot
+from PyQt5 import QtGui, QtCore, QtWidgets
+import qdarkstyle
+
 from collect_data.msg import self_image
 
 # bridge = CvBridge()
@@ -24,28 +27,30 @@ START_PUBLISH_FLAG = 0
         
 
 class CameraRosNode(QThread):
-    raw_image_signal = pyqtSignal() #创建 signal信号， 当ros接收到消息后 触发子界面数据更新
-    compressed_image_signal = pyqtSignal()
-
+    rgb_image_signal = pyqtSignal() 
+    ir_image_signal = pyqtSignal() 
     def __init__(self):
         QThread.__init__(self)  #创建线程
         rospy.init_node('camera_ros_node') #创建ros节点
-        # rospy.Subscriber('/hik_cam_node/hik_camera', Image, self.callback_raw_image)
-        rospy.Subscriber('/rgb_remap', self_image, self.callback_raw_image)
+        rospy.Subscriber('/rgb_remap', self_image, self.callback_rgb_img)
+        rospy.Subscriber('/ir_remap', self_image, self.callback_ir_img)
+        self.ir_img = None
+        self.rgb_img = None
 
-    def callback_raw_image(self, data):
-        # print(data)
-        # bridge = CvBridge()
-        # self.raw_image_opencv = bridge.imgmsg_to_cv2(data, "bgr8")
-        # self.raw_image_opencv = cv2.cvtColor(self.raw_image_opencv, cv2.COLOR_BGR2RGB)
-        image = np.ndarray(shape=(data.height, data.width, data.channels), dtype=np.uint8, buffer=data.data) # 将自定义图像消息转化为图像
-        
-        cv2.imshow("img", image)
-        cv2.waitKey(0)
+    def callback_ir_img(self, data):
+        self.ir_img = np.ndarray(shape=(data.height, data.width, data.channels), dtype=np.uint8, buffer=data.data) # 将自定义图像消息转化为图像
+        self.ir_image_signal.emit()
+
+    def callback_rgb_img(self, data):
+        self.rgb_img = np.ndarray(shape=(data.height, data.width, data.channels), dtype=np.uint8, buffer=data.data) # 将自定义图像消息转化为图像
+        self.rgb_image_signal.emit()
+        # cv2.imshow("rgb", image)
+        # cv2.waitKey(0)
         # self.raw_image_signal.emit()
 
     def run(self):
-        rospy.spin()    #订阅数据
+        #  spin()后才能进入callback函数，spin后的程序不能执行，除非跳出
+        rospy.spin()    
 
 class ThreadStartScribe(QtCore.QThread):
     def __init__(self):
@@ -172,21 +177,34 @@ class MainWindow(QtWidgets.QWidget):
         # ros node subscribe
         # ##############################################################
         self.subscribe_thread = CameraRosNode()
-        # self.subscribe_thread = ThreadStartScribe()
-        # self.init_node_subscribe()
+        self.subscribe_thread.rgb_image_signal.connect(self.update_rgb_img)
+        self.subscribe_thread.ir_image_signal.connect(self.update_ir_img)
 
-    # def init_node_subscribe(self):
-    #     rospy.init_node('showImages',anonymous = True)
-    #     rospy.Subscriber('/hik_cam_node/hik_camera', Image, self.rgb_callback)
-    #     rospy.spin()
-    #     # rospy.init_node('listener', anonymous=True)
-        # rospy.Subscriber("chatter", String, callback)
-    # def rgb_callback(self, data):
-    #     cv_image = bridge.imgmsg_to_cv2(data,"bgr8")
-    #     cv2.imshow("lala",cv_image)
-    #     cv2.waitKey(0)
-    
-    # @static_method
+     
+    def update_ir_img(self):
+        """
+        slot function
+        """
+        new_img = self.subscribe_thread.ir_img.copy()
+        dst_img = QtGui.QImage(new_img, new_img.shape[1],
+                                 new_img.shape[0], QtGui.QImage.Format_Grayscale)
+        self.ir_widget.pixmap = QtGui.QPixmap.fromImage(dst_img)
+        self.ir_widget.repaint()
+
+    def update_rgb_img(self):
+        """
+        slot function
+        """
+        print("in update rgb img")
+        new_img = self.subscribe_thread.rgb_img.copy()
+        new_img = cv2.cvtColor(new_img, cv2.COLOR_BGR2RGB)
+        # new_img = new_img[:, :, ::-1]
+        dst_img = QtGui.QImage(new_img, new_img.shape[1],
+                                 new_img.shape[0], QtGui.QImage.Format_RGB888)
+        self.rgb_widget.pixmap = QtGui.QPixmap.fromImage(dst_img)
+        self.rgb_widget.repaint()
+       
+
     def rgb_callback(self, data):
         cv_image = bridge.imgmsg_to_cv2(data,"bgr8")
         cv2.imshow("lala",cv_image)
@@ -202,11 +220,7 @@ class MainWindow(QtWidgets.QWidget):
         self.publish_launch.start()
         self.subscribe_thread.start()
         
-        # rospy.init_node('showImages',anonymous = True)
-        # rospy.Subscriber('/hik_cam_node/hik_camera', Image, self.rgb_callback)
-        # rospy.spin()
-
-        # self.subscribe_thread.start()
+     
         QtWidgets.QMessageBox.information(self, "[INFO]", "finish start publishing", QtWidgets.QMessageBox.Ok)
 
     def stop_publish(self):
@@ -231,11 +245,14 @@ class MainWindow(QtWidgets.QWidget):
     def start_collect_calib(self):
         global START_PUBLISH_FLAG
         if START_PUBLISH_FLAG:
-            uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
-            roslaunch.configure_logging(uuid)
-            self.collect_calib_launch = roslaunch.parent.ROSLaunchParent(
-                uuid, [COLLECT_CALIB_LAUNCH_ADDR])
-            self.collect_calib_launch.start()
+            rgb_img = self.subscribe_thread.rgb_img.copy()
+            ir_img = self.subscribe_thread.ir_img.copy()
+            cv2.imwrite()
+            # uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
+            # roslaunch.configure_logging(uuid)
+            # self.collect_calib_launch = roslaunch.parent.ROSLaunchParent(
+            #     uuid, [COLLECT_CALIB_LAUNCH_ADDR])
+            # self.collect_calib_launch.start()
         else:
             QtWidgets.QMessageBox.information(self, "ERROR", "Please start publishing first!", QtWidgets.QMessageBox.Ok)
 
@@ -245,16 +262,26 @@ class MainWindow(QtWidgets.QWidget):
         """  
         dom = ET.parse(COLLECT_DATA_LAUNCH_ADDR)
         root = dom.getroot()
-        itemlist = root.findall('param')
-        tag_val = itemlist[1].items()
-        for tag, val in tag_val:
-            if tag == "value":
-                prefix = val
-        # print(prefix)
+        for node in root.findall('param'):
+            if node.get("name") == "prefix":
+                prefix = node.get("value")
+                break
         self.linedit_current_prefix.setText(prefix)
 
-    def getFileName(self, save_dir):
-        index = 1000
+
+    def get_next_prefix(self):
+        """
+        calculate next prefix
+        """
+        dom = ET.parse(COLLECT_DATA_LAUNCH_ADDR)
+        root = dom.getroot()
+        for node in root.findall('param'):
+            if node.get("name") == "save_dir":
+                save_dir = node.get("value")
+                break    
+        if not os.path.exists(save_dir):
+            QtWidgets.QMessageBox.information(self, "INFO", "current savedir doesn't exist \n", QtWidgets.QMessageBox.Ok) 
+        index = 500
         while True:
             prefix = str(index).zfill(4)
             rgb_dir = save_dir + prefix + "_rgb.jpg"
@@ -264,58 +291,53 @@ class MainWindow(QtWidgets.QWidget):
                 index += 1
                 prefix = str(index).zfill(4)
                 break
-            else:
+            elif index > 1:
                 index -= 1
-        return prefix
-
-
-    def get_next_prefix(self):
-        """
-        calculate next prefix
-        """
-        dom = ET.parse(COLLECT_DATA_LAUNCH_ADDR)
-        root = dom.getroot()
-        itemlist = root.findall('param')        
-        tag_val = itemlist[0].items()
-        for tag, val in tag_val:
-            if tag == "value":
-                save_dir = val
-        prefix = self.getFileName(save_dir)
+            else:
+                prefix = str(index).zfill(4)
+                break
         self.linedit_current_prefix.setText(prefix)
 
-    def modify_collect_calib_launch(self, prefix):
-        dom = ET.parse(COLLECT_CALIB_LAUNCH_ADDR)
-        root = dom.getroot()
-        itemlist = root.findall('param')
-        itemlist[1].set("value", prefix + "_1_")
-        dom.write(COLLECT_CALIB_LAUNCH_ADDR) 
-    
-
+        
     def set_prefix(self):
         """
         set new prefix to COLLECT_DATA_LAUNCH_ADDR and COLLECT_CALIB_LAUNCH_ADDR launch files
         """
+        # ####################################################################
+        # modify collect calib launch
+        # ####################################################################
+        dom = ET.parse(COLLECT_CALIB_LAUNCH_ADDR)
         prefix = self.linedit_current_prefix.text()
+        root = dom.getroot()
+        for node in root.findall('param'):
+            if node.get("name") == "prefix":
+                node.set("value", prefix)
+                break
+        dom.write(COLLECT_CALIB_LAUNCH_ADDR) 
+
+        # #####################################################################
+        # collect data launch
+        # #####################################################################
         dom = ET.parse(COLLECT_DATA_LAUNCH_ADDR)
         root = dom.getroot()
-        itemlist = root.findall('param')
-        itemlist[1].set("value", prefix)
-        self.modify_collect_calib_launch(prefix)  # modify collect calib launch
-        # #############################################
+        for node in root.findall('param'):
+            if node.get("name") == "prefix":
+                node.set("value", prefix)
+                break
+
         # get save dir
-        tag_val = itemlist[0].items()
-        for tag, val in tag_val:
-            if tag == "value":
-                save_dir = val
+        for node in root.findall('param'):
+            if node.get("name") == "save_dir":
+                save_dir = node.get("value")
+                break
         # change lidar rosbag command 
-        item_lst = root.findall('node')
-        tag_val = item_lst[2].items()
-        for tag, val in tag_val:
-            if tag == "args":
-                args = val
+        for node in root.findall('node'):
+            if node.get("pkg") == "rosbag":
+                args = node.get("args")
+                break
         lst = args.split("-O ")
         new_args = lst[0] + "-O " + save_dir + prefix + "_lidar"
-        item_lst[2].set("args", new_args)
+        node.set("args", new_args)
         # save
         dom.write(COLLECT_DATA_LAUNCH_ADDR)  
         QtWidgets.QMessageBox.information(self, "INFO", "finish set prefix to \n" + COLLECT_DATA_LAUNCH_ADDR + 
@@ -326,14 +348,11 @@ class MainWindow(QtWidgets.QWidget):
         get COLLECT_DATA_LAUNCH_ADDR launch file savedir
         """
         dom = ET.parse(COLLECT_DATA_LAUNCH_ADDR)
-        #得到文档元素对象
         root = dom.getroot()
-        itemlist = root.findall('param')        
-        # get save dir
-        tag_val = itemlist[0].items()
-        for tag, val in tag_val:
-            if tag == "value":
-                save_dir = val
+        for node in root.findall('param'):
+            if node.get("name") == "save_dir":
+                save_dir = node.get("value")
+                break
         self.linedit_current_savedir.setText(save_dir)
         if not os.path.exists(save_dir):
             QtWidgets.QMessageBox.information(self, "INFO", "current savedir doesn't exist \n", QtWidgets.QMessageBox.Ok)
@@ -353,35 +372,32 @@ class MainWindow(QtWidgets.QWidget):
         # #########################################################
         dom = ET.parse(COLLECT_DATA_LAUNCH_ADDR)
         root = dom.getroot()
-        itemlist = root.findall('param')
+        for node in root.findall('param'):
+            if node.get("name") == "save_dir":
+                old_save_dir = node.get("value")
+                break
         
-        # get save dir
-        tag_val = itemlist[0].items()
-        for tag, val in tag_val:
-            if tag == "value":
-                old_save_dir = val
         new_save_dir = self.linedit_current_savedir.text()
-        itemlist[0].set("value", new_save_dir)
-        
-        
-        # ######################################################
-        item_lst = root.findall('node')
-        tag_val = item_lst[2].items()
-        for tag, val in tag_val:
-            if tag == "args":
-                args = val
-        new_args = args.replace(old_save_dir, new_save_dir)  # change lidar output dir
-        item_lst[2].set("args", new_args)
+        node.set("value", new_save_dir)
+                
+        # change lidar output dir
+        for node in root.findall('node'):
+            if node.get("pkg") == "rosbag":
+                args = node.get("args")
+                break
+        new_args = args.replace(old_save_dir, new_save_dir)  
+        node.set("args", new_args)
         dom.write(COLLECT_DATA_LAUNCH_ADDR)  
         # #########################################################
         # COLLECT_CALIB_LAUNCH_ADDR
         # #########################################################
         dom = ET.parse(COLLECT_CALIB_LAUNCH_ADDR)
         root = dom.getroot()
-        itemlist = root.findall('param')
-        itemlist[0].set("value", new_save_dir)
+        for node in root.findall('param'):
+            if node.get("name") == "save_dir":
+                break
+        node.set("value", new_save_dir)
         dom.write(COLLECT_CALIB_LAUNCH_ADDR)  
-
         QtWidgets.QMessageBox.information(self, "INFO", "finish set savedir to \n" + COLLECT_DATA_LAUNCH_ADDR + 
                                                 " and \n" + COLLECT_CALIB_LAUNCH_ADDR, QtWidgets.QMessageBox.Ok)
 
@@ -394,12 +410,11 @@ class MainWindow(QtWidgets.QWidget):
         # #########################################################
         dom = ET.parse(COLLECT_DATA_LAUNCH_ADDR)
         root = dom.getroot()
-        itemlist = root.findall('node')
-        tag_val = itemlist[2].items()
-        for tag, val in tag_val:
-            if tag == "args":
-                value = val
         fam = re.compile("--duration=[0-9]+")
+        for node in root.findall('node'):  # for every <node></node> 
+            if (node.get("pkg") == "rosbag"):
+                break        
+        value = node.get("args") # without return None
         res = fam.findall(value)
         if not res:
             QtWidgets.QMessageBox.information(self, "ERROR", COLLECT_DATA_LAUNCH_ADDR  + "dont have record time!", QtWidgets.QMessageBox.Ok)
@@ -415,11 +430,10 @@ class MainWindow(QtWidgets.QWidget):
         # #########################################################
         dom = ET.parse(COLLECT_DATA_LAUNCH_ADDR)
         root = dom.getroot()
-        itemlist = root.findall('node')
-        tag_val = itemlist[2].items()
-        for tag, val in tag_val:
-            if tag == "args":
-                value = val
+        for node in root.findall('node'):  # for every <node></node> 
+            if (node.get("pkg") == "rosbag"):
+                break     
+        value = node.get("args") # without return None   
         fam = re.compile("--duration=[0-9]*")
         old_args = fam.findall(value)[0]
         try:
@@ -430,7 +444,7 @@ class MainWindow(QtWidgets.QWidget):
         new_args = "--duration={}".format(new_record_time)
         print(new_args)
         new_value = value.replace(old_args, new_args)
-        itemlist[2].set("args", new_value)
+        node.set("args", new_value)
         dom.write(COLLECT_DATA_LAUNCH_ADDR)  
         QtWidgets.QMessageBox.information(self, "INFO", "finish set recordtime to \n" + COLLECT_DATA_LAUNCH_ADDR, QtWidgets.QMessageBox.Ok)
 

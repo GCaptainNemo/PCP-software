@@ -2,10 +2,12 @@
 
 import os
 import xml.etree.ElementTree as ET
+COLLECT_DATA_LAUNCH_ADDR = "/home/why/ROS_self/collect_data/src/collect_data/launch/collect_data.launch"
+COLLECT_CALIB_LAUNCH_ADDR = "/home/why/ROS_self/collect_data/src/collect_data/launch/collect_calib.launch"
 
 
 def getFileName(save_dir):
-    index = 1
+    index = 500
     while True:
         prefix = str(index).zfill(4)
         rgb_dir = save_dir + prefix + "_rgb.jpg"
@@ -13,57 +15,55 @@ def getFileName(save_dir):
         lidar_dir = save_dir + prefix + "_lidar.bag"
         if os.path.exists(rgb_dir) or os.path.exists(ir_dir) or os.path.exists(lidar_dir):
             index += 1
-        else:
+            prefix = str(index).zfill(4)
             break
+        else:
+            index -= 1
     return prefix
 
 
 def modify_collect_calib_launch(file_prefix):
-    dom = ET.parse('./src/collect_data/launch/collect_calib.launch')
+    dom = ET.parse(COLLECT_CALIB_LAUNCH_ADDR)
     root = dom.getroot()
-    itemlist = root.findall('param')
-    itemlist[1].set("value", file_prefix + "_1_")
-    dom.write("./src/collect_data/launch/collect_calib.launch") 
+    for node in root.findall('param'):
+        if node.get("name") == "prefix":
+            node.set("value", file_prefix)
+            break
+    dom.write(COLLECT_CALIB_LAUNCH_ADDR) 
     
 
 
 def main():
-    dom = ET.parse('./src/collect_data/launch/collect_data.launch')
-    #得到文档元素对象
-    print(dom)
+    dom = ET.parse(COLLECT_DATA_LAUNCH_ADDR)
     root = dom.getroot()
-    print(root)
-
-    itemlist = root.findall('param')
-    print(itemlist)
-    
+    for node in root.findall('param'):
+        if node.get("name") == "save_dir":
+            save_dir = node.get("value")
+            break
     # get save dir
-    tag_val = itemlist[0].items()
-    for tag, val in tag_val:
-        if tag == "value":
-            save_dir = val
-    print("save_dir = ", save_dir)
     if not os.path.exists(save_dir):
+        print("[error]", save_dir, "not exists!")
         return -1
     
     # get file name
     file_prefix = getFileName(save_dir)
     print("file_prefix = ", file_prefix)
-    itemlist[1].set("value", file_prefix)
-    # modify collect_calib.launch
+    for node in root.findall('param'):
+        if node.get("name") == "prefix":
+            break
+    node.set("value", file_prefix)
     modify_collect_calib_launch(file_prefix) 
 
     # ######################################################
-    item_lst = root.findall('node')
-    tag_val = item_lst[2].items()
-    for tag, val in tag_val:
-        if tag == "args":
-            args = val
+    for node in root.findall('node'):
+        if node.get("pkg") == "rosbag":
+            break
+    args = node.get("args")
     lst = args.split("-O ")
     new_args = lst[0] + "-O " + save_dir + file_prefix + "_lidar"
-    item_lst[2].set("args", new_args)
+    node.set("args", new_args)
     # save
-    dom.write("./src/collect_data/launch/collect_data.launch")  
+    dom.write(COLLECT_DATA_LAUNCH_ADDR)  
     
 
 if __name__ == "__main__":
