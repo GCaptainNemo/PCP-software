@@ -19,9 +19,9 @@ from collect_data.msg import self_image
 
 # bridge = CvBridge()
 
-COLLECT_DATA_LAUNCH_ADDR = "/home/why/ROS_self/collect_data/src/collect_data/launch/collect_data.launch"
-COLLECT_CALIB_LAUNCH_ADDR = "/home/why/ROS_self/collect_data/src/collect_data/launch/collect_calib.launch"
-PUBLISH_LAUNCH_ADDR = "/home/why/ROS_self/collect_data/src/collect_data/launch/publish_raw_data.launch"
+COLLECT_DATA_LAUNCH_ADDR = "/home/why/ROS_self/publish_collect_review_data/src/collect_data/launch/collect_data.launch"
+COLLECT_CALIB_LAUNCH_ADDR = "/home/why/ROS_self/publish_collect_review_data/src/collect_data/launch/collect_calib.launch"
+PUBLISH_LAUNCH_ADDR = "/home/why/ROS_self/publish_collect_review_data/src/collect_data/launch/publish_raw_data.launch"
 START_PUBLISH_FLAG = 0
 
         
