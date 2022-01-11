@@ -36,13 +36,8 @@ void ir_imageCallback(const sensor_msgs::ImageConstPtr& msg) {
     self_ir_msg.width = img_size.width;
     self_ir_msg.channels = ir_out_img.channels();
     int size = self_ir_msg.height * self_ir_msg.width * self_ir_msg.channels;
-    // self_ir_msg.data.resize(size);
-    // for (int i = 0; i < size; ++i){
-    //   self_ir_msg.data[i] = ir_out_img.data[i];
-    // }
     self_ir_msg.data = std::vector<uint8_t>(ir_out_img.data, ir_out_img.data + size);
     ir_image_pub.publish(self_ir_msg);
-    printf("width, height, channels = (%d, %d, %d)\n", img_size.width, img_size.height, self_ir_msg.channels);
     return;
   }
   catch (cv_bridge::Exception& e)
@@ -64,14 +59,8 @@ void rgb_imageCallback(const sensor_msgs::ImageConstPtr& msg) {
     self_rgb_msg.width = img_size.width;
     self_rgb_msg.channels = rgb_out_img.channels();
     int size = self_rgb_msg.height * self_rgb_msg.width * self_rgb_msg.channels;
-    // self_rgb_msg.data.resize(size);
-    // for (int i = 0; i < size; ++i){
-    //   self_rgb_msg.data[i] = rgb_out_img.data[i];
-    // }
-    
     self_rgb_msg.data = std::vector<uint8_t>(rgb_out_img.data, rgb_out_img.data + size);
     rgb_image_pub.publish(self_rgb_msg);
-    printf("width, height = (%d, %d)\n", img_size.width, img_size.height);
 
     return;
   }

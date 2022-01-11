@@ -1,6 +1,6 @@
 <launch>
 	<param name="save_dir" type="string" value="/media/why/LENOVO_USB_HDD/ir_rgb_registration_data_collect/" />
-	<param name="prefix" type="string" value="0007" />
-	<param name="output_option" type="string" value="calib"/>	
-	<node  name="ir_rgb_snapshot_calib" output="screen" pkg="collect_data" required="false" type="ir_rgb_snapshot" />
+	<param name="prefix" type="string" value="0019" />
+	<param name="output_option" type="string" value="calib" />	
+	<node name="ir_rgb_snapshot_calib" output="screen" pkg="collect_data" required="false" type="ir_rgb_snapshot" />
 </launch>
