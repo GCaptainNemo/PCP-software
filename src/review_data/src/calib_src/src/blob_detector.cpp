@@ -80,7 +80,7 @@ void test_blob_detectors(const char *img_dir)
 
 };
 
-void get_blob_detectors(Ptr<FeatureDetector> *blobDetector)
+void get_blob_detectors(Ptr<FeatureDetector> *blobDetector, const bool &is_ir)
 {
 	// Blob算子参数
 	SimpleBlobDetector::Params params;
@@ -93,7 +93,8 @@ void get_blob_detectors(Ptr<FeatureDetector> *blobDetector)
 	/*params.filterByCircularity = true;
 	params.minCircularity = 0.1;*/
 	params.filterByColor = true;  
-	params.blobColor = 255; // 255 choose bright blob, 0 choose dark blob.
+	if (is_ir) {params.blobColor = 255;} // 255 choose bright blob, 0 choose dark blob.
+	else{params.blobColor = 0;}
 	params.filterByConvexity = true;
 	params.minConvexity = 0.9;
 	params.filterByInertia = true;

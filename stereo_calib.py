@@ -161,9 +161,13 @@ class StereoCalib:
 
 if __name__ == "__main__":
 	try:
+		fam = re.compile("[0-9]{4}")
 		option = sys.argv[1]
+		res = fam.findall(option)
+		if res[0] != option:
+			raise -1
 	except Exception as e:
-		print("[error] please input prefix or all!")
+		print("[error] please input prefix(e.g., 0000) or all!")
 		exit(0)
 	mono_ir_calib = StereoCalib()
 	mono_ir_calib.start(option)

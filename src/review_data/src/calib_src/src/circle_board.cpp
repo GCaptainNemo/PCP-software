@@ -78,6 +78,7 @@ public:
         node["Fix_K3"] >> fixK3;
         node["Fix_K4"] >> fixK4;
         node["Fix_K5"] >> fixK5;
+        node["Input_IR"] >> IS_IR;
 
         validate();
     }
@@ -243,6 +244,7 @@ public:
     bool fixK4;                  // fix K4 distortion coefficient
     bool fixK5;                  // fix K5 distortion coefficient
     bool VISUALIZE_KEYPTS;       // visualize key pts or not
+    bool IS_IR;                  // input IR img or not
     std::vector<std::string> valid_imgs_lst;
 
     int cameraID;
@@ -276,7 +278,7 @@ int main(int argc, char* argv[])
 {
     const String keys
         = "{help h usage ? |           | print this message            }"
-          "{@settings      |/home/why/ROS_self/publish_collect_review_data/src/review_data/src/calib_src/config/mono_ir_setting.xml| input setting file            }"
+          "{@settings      |/home/why/ROS_self/publish_collect_review_data/src/review_data/src/calib_src/config/mono_setting.xml| input setting file            }"
           "{d              |           | actual distance between top-left and top-right corners of "
           "the calibration grid }"
           "{winSize        | 11        | Half of search window for cornerSubPix }";
@@ -343,7 +345,7 @@ int main(int argc, char* argv[])
     //! [get_input]
 #ifdef USING_BLOB_DETECTOR
 	Ptr<FeatureDetector> blobDetector;
-	get_blob_detectors(&blobDetector);
+	get_blob_detectors(&blobDetector, s.IS_IR);
 
 #endif // USING_BLOB_DETECTOR
 
