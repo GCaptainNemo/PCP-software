@@ -265,7 +265,7 @@ int main(int argc, char* argv[])
     vector<vector<Point2f> > imagePoints;
 	// CameraMatrix => intrinsic matrix
     Mat cameraMatrix, distCoeffs;
-    Size imageSize;
+    cv::Size imageSize;
     
 	clock_t prevTimestamp = 0;
     const Scalar RED(0,0,255), GREEN(0,255,0);
@@ -276,30 +276,21 @@ int main(int argc, char* argv[])
 	get_blob_detectors(&irBlobDetector, true);
 	get_blob_detectors(&rgbBlobDetector, false);
 	vector< vector< Point2f > > ir_image_pts, rgb_image_pts;
-	for(int i=0; i < s.irImageList.size();++i)
+    vector< Point3f > obj;
+    for (int i = 0; i < s.boardSize.height; i++)
+        for (int j = 0; j < s.boardSize.width; j++)
+            obj.push_back(Point3f((float)j * s.squareSize, (float)i * s.squareSize, 0));
+    vector<vector<Point3f> > objectPoints;
+	
+    cv::Mat ir_img, rgb_img;
+    for(int i=0; i < s.irImageList.size();++i)
     {
         std::string ir_img_address = s.irImageList[i];
-        cv::Mat ir_img = imread(ir_img_address, IMREAD_COLOR);
+        ir_img = imread(ir_img_address, IMREAD_COLOR);
         std::string rgb_img_address = s.rgbImageList[i];
-        cv::Mat rgb_img = imread(rgb_img_address, IMREAD_COLOR);
-        
+        rgb_img = imread(rgb_img_address, IMREAD_COLOR);
         //-----  If no more image, or got enough, then stop calibration and show result -------------
 		std::cout << "img_count = " << imagePoints.size() << ", frame_num = " << (size_t)s.nrFrames << std::endl;
-		
-        // if(ir_rgb_pair[0].empty())          // If there are no more images stop the loop
-        // {
-        //     if ( imagePoints.size() < 1)
-        //     {
-        //         std::cout << "detected board num is " << imagePoints.size() << "(less than 1)" << std::endl;
-        //         return -1;
-        //     }
-        //     // if calibration threshold was not reached yet, calibrate now
-        //         // start calibration!!!!!!!!!!!!!!!!!!!!!!!!!!!
-		// 		// runCalibrationAndSave(s, imageSize,  cameraMatrix, distCoeffs, imagePoints, grid_width,
-        //         //                       release_object);
-        //     break;
-        // }
-
         // visualize keypts detected by blob detector
         if(s.VISUALIZE_KEYPTS){
             std::vector<KeyPoint> ir_centers, rgb_centers;
@@ -346,38 +337,31 @@ int main(int argc, char* argv[])
                 ir_image_pts.push_back(irPointBuf);
                 rgb_image_pts.push_back(rgbPointBuf);
                 s.valid_imgs_lst.push_back(ir_img_address + "    " + rgb_img_address);
+                objectPoints.push_back(obj);
                 // Draw the corners.
                 drawChessboardCorners( ir_img, s.boardSize, Mat(irPointBuf), ir_found );
                 drawChessboardCorners( rgb_img, s.boardSize, Mat(rgbPointBuf), rgb_found );
         
         }
-        
-        //! [output_undistorted]
-        //------------------------------ Show image and check for input commands -------------------
-        //! [await_input]
-        imshow("ir Image View", ir_img);
-        imshow("rgb Image View", rgb_img);
-        std::cout << "finished imshow" << std::endl;
-
+        // imshow("ir Image View", ir_img);
+        // imshow("rgb Image View", rgb_img);
         char key;
         if (s.VISUALIZE_KEYPTS){key = (char)waitKey(0);}
         else {key = (char)waitKey(100);}
     }
+    if (ir_image_pts.size() < 1){std::cout << "[ERROR] cannot detect pts simultaneously!"; return -1;}
+
     cv::Mat rgb_camera_mat, rgb_dist_mat, ir_camera_mat, ir_dist_mat;
     s.readCameraMat(s.ir_calib_addr, ir_camera_mat, ir_dist_mat);
     s.readCameraMat(s.rgb_calib_addr, rgb_camera_mat, rgb_dist_mat);
-    std::cout << rgb_camera_mat << ir_camera_mat << std::endl;
-    vector<vector<Point3f> > objectPoints(1);
-    calcBoardCornerPositions(s.boardSize, s.squareSize, objectPoints[0], s.calibrationPattern);
-    objectPoints[0][s.boardSize.width - 1].x = objectPoints[0][0].x + grid_width;
-    objectPoints.resize(imagePoints.size(),objectPoints[0]);
+    std::cout << "rgb_mat = " << rgb_camera_mat << std::endl << "ir_mat = " << ir_camera_mat << std::endl;
+    
 
-    // runCalibrationAndSave(s, imageSize,  cameraMatrix, distCoeffs, imagePoints, grid_width,
-    //                                   release_object);
     cv::Mat R, T, E, F;
     stereoCalibrate(objectPoints, ir_image_pts, rgb_image_pts, 
-    ir_camera_mat,ir_dist_mat, rgb_camera_mat, rgb_dist_mat, imageSize, 
+    ir_camera_mat,ir_dist_mat, rgb_camera_mat, rgb_dist_mat, ir_img.size(), 
     R, T, E, F);
+
 
 };
 

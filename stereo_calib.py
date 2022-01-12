@@ -13,7 +13,7 @@ debuglogger = lambda  a : (print(a) if DEBUG else ...)
 
 	
 # SUFFIX_OPTION = "ir."
-SUFFIX = "ir_resize" # ir/ir_resize
+SUFFIX = "ir" # ir/ir_resize
 
 class StereoCalib:
 	def __init__(self):
