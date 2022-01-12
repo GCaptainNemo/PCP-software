@@ -276,7 +276,7 @@ int main(int argc, char* argv[])
 {
     const String keys
         = "{help h usage ? |           | print this message            }"
-          "{@settings      |/home/why/ROS_self/publish_collect_review_data/src/review_data/src/calib_src/config/IR_chessboard.xml| input setting file            }"
+          "{@settings      |/home/why/ROS_self/publish_collect_review_data/src/review_data/src/calib_src/config/mono_ir_setting.xml| input setting file            }"
           "{d              |           | actual distance between top-left and top-right corners of "
           "the calibration grid }"
           "{winSize        | 11        | Half of search window for cornerSubPix }";

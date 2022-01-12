@@ -12,7 +12,7 @@
   <Calibrate_Pattern>"CIRCLES_GRID"</Calibrate_Pattern>
   
   
-  <Input>"/home/why/ROS_self/publish_collect_review_data/src/review_data/src/calib_src/config/imgs.xml"</Input>
+  <Input>"/home/why/ROS_self/publish_collect_review_data/src/review_data/src/calib_src/config/mono_ir_imgs.xml"</Input>
   
   <Input_FlipAroundHorizontalAxis>0</Input_FlipAroundHorizontalAxis>
   

@@ -5,8 +5,8 @@ import xml.etree.ElementTree as ET
 import sys
 import re
 COLLECT_DATA_LAUNCH_ADDR = "/home/why/ROS_self/publish_collect_review_data/src/collect_data/launch/collect_data.launch"
-IMGS_XML_CONFIG_ADDR = "/home/why/ROS_self/publish_collect_review_data/src/review_data/src/calib_src/config/imgs.xml"
-IR_CHESSBOARD_XML_ADDR = "/home/why/ROS_self/publish_collect_review_data/src/review_data/src/calib_src/config/IR_chessboard.xml"
+MONO_IR_IMGS_XML_ADDR = "/home/why/ROS_self/publish_collect_review_data/src/review_data/src/calib_src/config/mono_ir_imgs.xml"
+MONO_IR_SETTING_XML_ADDR = "/home/why/ROS_self/publish_collect_review_data/src/review_data/src/calib_src/config/mono_ir_setting.xml"
 
 DEBUG = False
 debuglogger = lambda  a : (print(a) if DEBUG else ...)
@@ -27,9 +27,9 @@ class MonoIrCalib:
 			if len(address_lst) < 3:
 				print("[error] less calib data")
 				exit(0)
-			self.write_imgs_xml(address_lst)
-			self.write_IR_chessboard_xml(save_dir, prefix)
-			res = self.run_calib_exe()
+			self.write_mono_ir_imgs_xml(address_lst)
+			self.write_mono_ir_setting_xml(save_dir, prefix)
+			res = self.run_mono_ir_calib_exe()
 			if(res == 0):
 				self.success_imgs_lst.append(prefix)
 			else:
@@ -51,9 +51,9 @@ class MonoIrCalib:
 					self.fail_imgs_lst.append(prefix)
 					continue
 				address_lst = self.get_calib_ir_address_lst(save_dir, prefix)
-				self.write_imgs_xml(address_lst)
-				self.write_IR_chessboard_xml(save_dir, prefix)
-				res = self.run_calib_exe()
+				self.write_mono_ir_imgs_xml(address_lst)
+				self.write_mono_ir_setting_xml(save_dir, prefix)
+				res = self.run_mono_ir_calib_exe()
 				if(res == 0):
 					self.success_imgs_lst.append(prefix)
 				else:
@@ -82,14 +82,14 @@ class MonoIrCalib:
 				continue
 		return address_lst
 
-	def write_imgs_xml(self, address_lst):
-		dom = ET.parse(IMGS_XML_CONFIG_ADDR)
+	def write_mono_ir_imgs_xml(self, address_lst):
+		dom = ET.parse(MONO_IR_IMGS_XML_ADDR)
 		root = dom.getroot()
 		
 		images_node = root.find('images')
 		images_node.text = "\n" + "\n".join(address_lst) + "\n"
-		dom.write(IMGS_XML_CONFIG_ADDR) 
-		self.add_xml_declaration(IMGS_XML_CONFIG_ADDR)
+		dom.write(MONO_IR_IMGS_XML_ADDR) 
+		self.add_xml_declaration(MONO_IR_IMGS_XML_ADDR)
 
 	def add_xml_declaration(self, addr):
 		with open(addr, "r+") as f:
@@ -100,19 +100,19 @@ class MonoIrCalib:
 		with open(addr, "w+") as f:
 			f.write(s)
 
-	def write_IR_chessboard_xml(self, save_dir, prefix):
-		dom = ET.parse(IR_CHESSBOARD_XML_ADDR)
+	def write_mono_ir_setting_xml(self, save_dir, prefix):
+		dom = ET.parse(MONO_IR_SETTING_XML_ADDR)
 		root = dom.getroot()
 		setting_node = root.find('Settings')
 		output_node = setting_node.find("Write_outputFileName")
 		
 		print(output_node.text)
 		output_node.text = '"' + save_dir + prefix + '_monocalib.yaml"'
-		dom.write(IR_CHESSBOARD_XML_ADDR) 
-		self.add_xml_declaration(IR_CHESSBOARD_XML_ADDR)
+		dom.write(MONO_IR_SETTING_XML_ADDR) 
+		self.add_xml_declaration(MONO_IR_SETTING_XML_ADDR)
 
 
-	def run_calib_exe(self):
+	def run_mono_ir_calib_exe(self):
 		res = os.system("rosrun review_data mono_ir_calib")
 		res >>= 8  # high 8 bit is return value
 		return res
