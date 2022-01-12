@@ -12,7 +12,8 @@ DEBUG = False
 debuglogger = lambda  a : (print(a) if DEBUG else ...)
 
 	
-
+# SUFFIX_OPTION = "ir."
+SUFFIX = "ir_resize"
 
 class StereoCalib:
 	def __init__(self):
@@ -28,15 +29,15 @@ class StereoCalib:
 				exit(0)
 			self.write_stereo_imgs_xml(pair_address_lst)
 			self.write_stereo_setting_xml(save_dir, prefix)
-			# res = self.run_calib_exe()
-			# if(res == 0):
-			# 	self.success_imgs_lst.append(prefix)
-			# else:
-			# 	self.fail_imgs_lst.append(prefix)
+			res = self.run_stereo_calib_exe()
+			if(res == 0):
+				self.success_imgs_lst.append(prefix)
+			else:
+				self.fail_imgs_lst.append(prefix)
 
 		else:
 			prefix_count_dict = dict()
-			ir_fam = re.compile("[0-9]{4}_[0-9]+__ir")
+			ir_fam = re.compile("[0-9]{4}_[0-9]+__" + SUFFIX + "[.]jpg")
 			for file in os.listdir(save_dir):
 				res_lst = ir_fam.findall(file)
 				if res_lst:
@@ -49,14 +50,14 @@ class StereoCalib:
 					print("[error]", prefix, " only have {} calib data (less than 3)".format(count))
 					self.fail_imgs_lst.append(prefix)
 					continue
-				pair_address_lst = self.get_calib_ir_address_lst(save_dir, prefix)
+				pair_address_lst = self.get_calib_ir_rgb_address_lst(save_dir, prefix)
 				self.write_stereo_imgs_xml(pair_address_lst)
 				self.write_stereo_setting_xml(save_dir, prefix)
-				# res = self.run_calib_exe()
-				# if(res == 0):
-				# 	self.success_imgs_lst.append(prefix)
-				# else:
-				# 	self.fail_imgs_lst.append(prefix)
+				res = self.run_stereo_calib_exe()
+				if(res == 0):
+					self.success_imgs_lst.append(prefix)
+				else:
+					self.fail_imgs_lst.append(prefix)
 		print("success = ", self.success_imgs_lst)
 		print("fail = ", self.fail_imgs_lst)
 				
@@ -77,7 +78,7 @@ class StereoCalib:
 		# ####################################################################
 		# check mono ir calib data
 		# ####################################################################
-		mono_ir_calib_reg = prefix + "_monocalib"
+		mono_ir_calib_reg = prefix + "_monocalib_" + SUFFIX + "[.]yaml"
 		ir_calib_fam = re.compile(mono_ir_calib_reg)
 		for ir_file in os.listdir(save_dir):
 			res_lst = ir_calib_fam.findall(ir_file)
@@ -90,21 +91,17 @@ class StereoCalib:
 		# ####################################################################
 		# get ir/rgb pair
 		# ####################################################################
-		ir_match_reg = prefix + "_[0-9]+__ir"
+		ir_match_reg = prefix + "_[0-9]+__" + SUFFIX + "[.]jpg"
 		ir_fam = re.compile(ir_match_reg)
 		pair_address_lst = []
-		
-		for ir_file in os.listdir(save_dir):
+		file_lst = os.listdir(save_dir)
+		for ir_file in file_lst:
 			ir_res_lst = ir_fam.findall(ir_file)
 			if ir_res_lst:
-				rgb_match_reg = ir_res_lst[0].replace("ir", "rgb")
-				rgb_fam = re.compile(rgb_match_reg)
-				for rgb_file in os.listdir(save_dir):
-					rgb_res_lst = rgb_fam.findall(rgb_file)
-					if rgb_res_lst:
-						pair_address_lst.append(save_dir + ir_file + "    " + save_dir + rgb_file)
-						break
-
+				rgb_match_reg = ir_res_lst[0].replace(SUFFIX, "rgb")
+				if rgb_match_reg in file_lst:
+					pair_address_lst.append(save_dir + ir_file + "    " + save_dir + rgb_match_reg)
+					break
 		return pair_address_lst
 
 	def write_stereo_imgs_xml(self, address_lst):
@@ -129,7 +126,7 @@ class StereoCalib:
 		# #######################################################################
 		# check mono ir calib data
 		# #######################################################################
-		mono_ir_calib_reg = prefix + "_monocalib"
+		mono_ir_calib_reg = prefix + "_monocalib_" + SUFFIX + "[.]yaml"
 		ir_calib_fam = re.compile(mono_ir_calib_reg)
 		for file in os.listdir(save_dir):
 			res_lst = ir_calib_fam.findall(file)
@@ -153,15 +150,15 @@ class StereoCalib:
 		self.add_xml_declaration(STEREO_SETTING_XML_ADDR)
 
 
-	def run_calib_exe(self):
-		res = os.system("rosrun review_data mono_ir_calib")
+	def run_stereo_calib_exe(self):
+		res = os.system("rosrun review_data stereo_calib")
 		res >>= 8  # high 8 bit is return value
 		return res
 
 
 if __name__ == "__main__":
 	try:
-		fam = re.compile("[0-9]{4}")
+		fam = re.compile("[0-9]{4}|all")
 		option = sys.argv[1]
 		res = fam.findall(option)
 		if res[0] != option:

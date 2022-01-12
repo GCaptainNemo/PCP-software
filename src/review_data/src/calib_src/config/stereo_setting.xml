@@ -12,9 +12,9 @@
   <Calibrate_Pattern>"CIRCLES_GRID"</Calibrate_Pattern>
   
   
-  <InputIrRgbAddr>"/home/why/ROS_self/publish_collect_review_data/src/review_data/src/calib_src/config/stereo_imgs.xml"</InputIrRgbAddr>
+  <Input>"/home/why/ROS_self/publish_collect_review_data/src/review_data/src/calib_src/config/stereo_imgs.xml"</Input>
 
-  <InputIrParAddr>/media/why/LENOVO_USB_HDD/ir_rgb_registration_data_collect/0001_monocalib.yaml</InputIrParAddr>
+  <InputIrParAddr>/media/why/LENOVO_USB_HDD/ir_rgb_registration_data_collect/0001_monocalib_ir_resize.yaml</InputIrParAddr>
 
   <InputRgbParAddr>/home/why/ROS_self/publish_collect_review_data/src/review_data/src/calib_src/config/param3.yaml</InputRgbParAddr>
 
