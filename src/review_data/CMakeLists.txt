@@ -24,6 +24,11 @@ include_directories(${catkin_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${PCL_INCLUDE_
 add_executable(review_color_lidar_node src/review_color_lidar_node.cpp src/utils.cpp ../common_utils/io_utils.cpp)
 target_link_libraries(review_color_lidar_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${PCL_LIB_DIR} ${PCL_LIBRARIES})
 
+# mono ir calib(circle grid)
+add_executable(mono_ir_calib src/calib_src/src/circle_board.cpp src/calib_src/src/blob_detector.cpp)
+target_link_libraries(mono_ir_calib ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} )
+target_include_directories(mono_ir_calib PRIVATE src/calib_src/include)
+
 # add_executable(rgb_snapshot src/rgb_snapshot.cpp)
 # target_link_libraries(rgb_snapshot ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
 

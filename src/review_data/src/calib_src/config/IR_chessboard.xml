@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<opencv_storage>
+<Settings>
+  <VISUALIZE_KEYPTS> 0 </VISUALIZE_KEYPTS>
+  <BoardSize_Width> 8 </BoardSize_Width>
+  <BoardSize_Height> 6 </BoardSize_Height>
+  
+  
+  <Square_Size>60</Square_Size>
+  
+  
+  <Calibrate_Pattern>"CIRCLES_GRID"</Calibrate_Pattern>
+  
+  
+  <Input>"/home/why/ROS_self/publish_collect_review_data/src/review_data/src/calib_src/config/imgs.xml"</Input>
+  
+  <Input_FlipAroundHorizontalAxis>0</Input_FlipAroundHorizontalAxis>
+  
+  
+  <Input_Delay>100</Input_Delay>	
+  
+  
+  <Calibrate_NrOfFrameToUse>12</Calibrate_NrOfFrameToUse>
+  
+  <Calibrate_FixAspectRatio> 0 </Calibrate_FixAspectRatio>
+  
+  <Calibrate_AssumeZeroTangentialDistortion>0</Calibrate_AssumeZeroTangentialDistortion>
+  
+  <Calibrate_FixPrincipalPointAtTheCenter> 0 </Calibrate_FixPrincipalPointAtTheCenter>
+  
+  
+  <Write_outputFileName>"/media/why/LENOVO_USB_HDD/ir_rgb_registration_data_collect/0019_monocalib.yaml"</Write_outputFileName>
+  
+  <Write_DetectedFeaturePoints>0</Write_DetectedFeaturePoints>
+  
+  <Write_extrinsicParameters>0</Write_extrinsicParameters>
+  
+  <Write_gridPoints>0</Write_gridPoints>
+  
+  <Show_UndistortedImage>0</Show_UndistortedImage>
+  
+  <Calibrate_UseFisheyeModel>0</Calibrate_UseFisheyeModel>
+  
+  <Fix_K1>0</Fix_K1>
+  
+  <Fix_K2>0</Fix_K2>
+  
+  <Fix_K3>1</Fix_K3>
+  
+  <Fix_K4>1</Fix_K4>
+  
+  <Fix_K5>1</Fix_K5>
+</Settings>
+</opencv_storage>
