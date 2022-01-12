@@ -19,7 +19,7 @@
   <InputRgbParAddr>/home/why/ROS_self/publish_collect_review_data/src/review_data/src/calib_src/config/param3.yaml</InputRgbParAddr>
 
   
-  <Write_outputFileName>"/media/why/LENOVO_USB_HDD/ir_rgb_registration_data_collect/0001_stereocalib.yaml"</Write_outputFileName>
+  <Write_outputFileName>"/media/why/LENOVO_USB_HDD/ir_rgb_registration_data_collect/0001_stereocalib_ir_resize.yaml"</Write_outputFileName>
   
   
 </Settings>

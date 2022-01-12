@@ -13,7 +13,7 @@ debuglogger = lambda  a : (print(a) if DEBUG else ...)
 
 	
 # SUFFIX_OPTION = "ir."
-SUFFIX = "ir_resize"
+SUFFIX = "ir_resize" # ir/ir_resize
 
 class StereoCalib:
 	def __init__(self):
@@ -101,7 +101,6 @@ class StereoCalib:
 				rgb_match_reg = ir_res_lst[0].replace(SUFFIX, "rgb")
 				if rgb_match_reg in file_lst:
 					pair_address_lst.append(save_dir + ir_file + "    " + save_dir + rgb_match_reg)
-					break
 		return pair_address_lst
 
 	def write_stereo_imgs_xml(self, address_lst):
@@ -141,7 +140,7 @@ class StereoCalib:
 		root = dom.getroot()
 		setting_node = root.find('Settings')
 		output_node = setting_node.find("Write_outputFileName")		
-		output_node.text = '"' + save_dir + prefix + '_stereocalib.yaml"'
+		output_node.text = '"' + save_dir + prefix + '_stereocalib_' + SUFFIX + '.yaml"'
 		ir_par_node = setting_node.find("InputIrParAddr")
 		ir_par_node.text = ir_calib_addr
 		rgb_par_node = setting_node.find("InputRgbParAddr")

@@ -6,9 +6,9 @@
 
 
 
-<p align="center"><img src="./resources/flow_chart1.png" width=80%></p>
+<p align="center"><img src="./resources/flow_chart.png" width=80%></p>
 
-<h6 align="center">流程图</h6>
+<h6 align="center">流程图(白色框代表节点或节点簇)</h6>
 
 其中**pair data**形式为IR/RGB图像对，是当前场景下红外标定版在IR/RGB中的图像，一个场景拍三张以上，用来标定红外内参和红外与可见光相机的外参。**triplet data**形式除IR/RGB图像对外，还包括激光雷达rosbag数据包。 
 
@@ -28,14 +28,15 @@ launch文件中具有**两个关键参数**：
 
 1. 保存路径`save_dir`
 2. 文件前缀`prefix`
+3. 文件后缀`suffix`（包括ir、rgb、ir_resize，用来标识文件）
 
 其中`prefix`范围为[0001-9999]，在收集数据时(1帧rgb，1帧ir，若干秒点云)，每次收集数据前前缀**需人为向后移动**，不然为覆盖旧数据。在收集标定数据(1帧rgb，1帧ir)时，会引入额外的子前缀 e.g., 0001_1__，子前缀不需要设置，**会自动搜索不覆盖前面数据**。
 
 #### 1.2 设备调试经验
 
 1. FLIR无法接收数据
-  查看FLIR设备号: `ls -ltrh /dev/video*`
-  ubuntu USB设备号一般为从零开始依次累加，但多个设备每次开机后**设备号不固定**，应该重启后再接FLIR USB。
+    查看FLIR设备号: `ls -ltrh /dev/video*`
+    ubuntu USB设备号一般为从零开始依次累加，但多个设备每次开机后**设备号不固定**，应该重启后再接FLIR USB。
 
 2. HIKVISION无法接收数据
 网络连接问题，需要重新打开、关闭网络（网络->PCI以太网）。
