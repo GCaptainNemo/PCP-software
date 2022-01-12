@@ -361,8 +361,23 @@ int main(int argc, char* argv[])
     stereoCalibrate(objectPoints, ir_image_pts, rgb_image_pts, 
     ir_camera_mat,ir_dist_mat, rgb_camera_mat, rgb_dist_mat, ir_img.size(), 
     R, T, E, F);
-
-
+    cv::FileStorage fs1(s.outputFileName, cv::FileStorage::WRITE);
+    fs1 << "irCameraMat" << ir_camera_mat;
+    fs1 << "rgbCameraMat" << rgb_camera_mat;
+    fs1 << "irDistCoeff" << ir_dist_mat;
+    fs1 << "rgbDistCoeff" << rgb_dist_mat;
+    fs1 << "R" << R;
+    fs1 << "T" << T;
+    fs1 << "E" << E;
+    fs1 << "F" << F;
+    cv::Mat R1, R2, P1, P2, Q;
+    stereoRectify(ir_camera_mat, ir_dist_mat, rgb_camera_mat, rgb_dist_mat, ir_img.size(), R, T, R1, R2, P1, P2, Q);
+    fs1 << "R1" << R1;
+    fs1 << "R2" << R2;
+    fs1 << "P1" << P1;
+    fs1 << "P2" << P2;
+    fs1 << "Q" << Q;
+    printf("finish epipolar Rectification\n");
 };
 
 //! [compute_errors]
@@ -398,67 +413,3 @@ static double computeReprojectionErrors( const vector<vector<Point3f> >& objectP
 
     return std::sqrt(totalErr/totalPoints);
 }
-
-
-// Print camera parameters to the output file
-static void saveCameraParams( Settings& s, Size& imageSize, Mat& cameraMatrix, Mat& distCoeffs,
-                              const vector<Mat>& rvecs, const vector<Mat>& tvecs,
-                              const vector<float>& reprojErrs, const vector<vector<Point2f> >& imagePoints,
-                              double totalAvgErr, const vector<Point3f>& newObjPoints )
-{
-    FileStorage fs( s.outputFileName, FileStorage::WRITE );
-
-    time_t tm;
-    time( &tm );
-    struct tm *t2 = localtime( &tm );
-    char buf[1024];
-    strftime( buf, sizeof(buf), "%c", t2 );
-
-    fs << "CalibrationTime" << buf;
-
-    if( !rvecs.empty() || !reprojErrs.empty() )
-        fs << "ValidFrames" << (int)std::max(rvecs.size(), reprojErrs.size());
-    
-    fs << "BoardWidth" << s.boardSize.width;
-    fs << "BoardHeight" << s.boardSize.height;
-    fs << "SquareSize" << s.squareSize;
-
-
-
-
-    // fs << "fisheye_model" << s.useFisheye;
-
-    fs << "CameraMat" << cameraMatrix;
-    fs << "DistCoeff" << distCoeffs;
-    std::vector <int>linshi_size(2);
-    linshi_size[0] = imageSize.width;
-    linshi_size[1] = imageSize.height;
-
-    fs << "ImageSize" << linshi_size;
-    fs << "ReprojectionError" << totalAvgErr;
-    fs << "ValidImageFiles" << s.valid_imgs_lst;
-    fs << "EachReprojectionError" << Mat(reprojErrs);
-    
-}
-
-//! [run_and_save]
-bool runCalibrationAndSave(Settings& s, Size imageSize, Mat& cameraMatrix, Mat& distCoeffs,
-                           vector<vector<Point2f> > imagePoints, float grid_width, bool release_object)
-{
-    // vector<Mat> rvecs, tvecs;
-    // vector<float> reprojErrs;
-    // double totalAvgErr = 0;
-    // vector<Point3f> newObjPoints;
-
-    // bool ok = runCalibration(s, imageSize, cameraMatrix, distCoeffs, imagePoints, rvecs, tvecs, reprojErrs,
-    //                          totalAvgErr, newObjPoints, grid_width, release_object);
-    // cout << (ok ? "Calibration succeeded" : "Calibration failed")
-    //      << ". avg re projection error = " << totalAvgErr << endl;
-
-    // if (ok)
-    //     saveCameraParams(s, imageSize, cameraMatrix, distCoeffs, rvecs, tvecs, reprojErrs, imagePoints,
-    //                      totalAvgErr, newObjPoints);
-    // return ok;
-}
-//! [run_and_save]
-
