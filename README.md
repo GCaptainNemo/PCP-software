@@ -93,6 +93,22 @@ python3 ./stereo_calib.py 0000
 
 <h6 align="center">立体矫正结果</h6>
 
+#### 4.3 图像对应点匹配
+
+把立体标定得到的外参T<sub>rgb->ir</sub>作用到T<sub>rgb->lidar</sub>得到T<sub>ir->lidar</sub>(**注意立体标定外参单位是mm，激光雷达标定外参单位是m**)，进而把世界坐标系的点云分别投影到rgb图像坐标系和ir图像坐标系得到如下的rgb/ir着色点云。
+
+<p align="center"><img src="./resources/ir_rgb_cloud.png" width=80%></p>
+
+
+
+<h6 align="center">可见光红外纹理着色点云</h6>
+
+<p align="center"><img src="./resources/2d-2dmatch.png" width=80%></p>
+
+<h6 align="center">根据点云投影关系获得的ir-rgb匹配点对(降采样40000倍)</h6>
+
+
+
 ## 三、PAC客户端使用方法
 
 ````

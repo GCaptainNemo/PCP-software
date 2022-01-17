@@ -16,6 +16,8 @@
 #include <pcl/point_types.h>
 #include <pcl/io/pcd_io.h> 
 #include <pcl/visualization/cloud_viewer.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/kdtree/kdtree_flann.h>
 
 #include <ros/ros.h>
 #include <ros/package.h>
@@ -52,6 +54,8 @@ typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloudXYZRGB;
 constexpr bool IS_FILTER = true;
 // constexpr bool IS_IMAGE_CORRECTION = true;
 constexpr bool IS_IMAGE_CORRECTION = false;
+constexpr bool IsVoxelFilter = true;
+
 
 std::vector<cv::Point2f> corners(0);
 std::vector<cv::Point2f> ir_corners(0);
@@ -113,6 +117,16 @@ void mapJet(double v, double vmin, double vmax, uint8_t &r, uint8_t &g,
   b = (uint8_t)(255 * db);
 }
 
+// ir-rgb match point
+typedef struct PairPt
+{
+public:
+  PairPt(const cv::Point2f &ir, const cv::Point2f &rgb): ir_pt(ir), rgb_pt(rgb){};
+  PairPt(){};
+public:
+  cv::Point2f ir_pt;
+  cv::Point2f rgb_pt;
+} PairPt;
 
 class IrRgbRegistration
 {
@@ -148,7 +162,9 @@ public:
     PointCloudXYZI::Ptr pc_ptr_xyzi; 
     PointCloudXYZRGB::Ptr pc_ptr_xyzrgb;
     PointCloudXYZRGB::Ptr pc_ptr_xyzir;
-    
+
+public:
+    std::vector <PairPt> pair_pts;
 
 public:
     ros::NodeHandle node_handle;
@@ -218,6 +234,12 @@ public:
 
   // fusion get ir colored pointclou
   void fusion_ir_lidar();
+
+  // calculate Matching points
+  void get_ir_rgb_match_pts();
+
+  // draw match
+  void draw_matches(const std::vector<PairPt> &pair_pts, const cv::Mat &ir_img, const cv::Mat &rgb_img);
 
   // choose image correspondance points
   void choose_corners();
@@ -493,9 +515,10 @@ void IrRgbRegistration::get_ir_param()
   cv::Mat R_rgb2ir, t_rgb2ir;
   fs["R"] >> R_rgb2ir;
   fs["T"] >> t_rgb2ir;
+  t_rgb2ir = t_rgb2ir / 1000;
   cv::hconcat(R_rgb2ir, t_rgb2ir, this->T_rgb2ir);
   cv::Mat R_rgb2lidar, t_rgb2lidar, R_ir2lidar, t_ir2lidar, R_ir2rgb, t_ir2rgb;
-  R_rgb2lidar = this->T_rgb2lidar(cv::Rect(0, 0, 3, 3));
+  R_rgb2lidar = this->T_rgb2lidar(cv::Rect(0, 0, 3, 3));  // x, y, width, height
   t_rgb2lidar = this->T_rgb2lidar(cv::Rect(3, 0, 1, 3));
   R_ir2rgb = R_rgb2ir.t();
   t_ir2rgb = - R_ir2rgb * t_rgb2ir;
@@ -649,6 +672,11 @@ void IrRgbRegistration::fusion_rgb_lidar()
     pc_ptr_xyzrgb->width = 1;
     pc_ptr_xyzrgb->height = pc_ptr_xyzrgb->points.size();
     ROS_INFO("pc_xyzrgb.size = %d", pc_ptr_xyzrgb->points.size());
+    pcl::visualization::CloudViewer viewer("RGB CLOUD Viewer"); //创造一个显示窗口
+    viewer.showCloud(this->pc_ptr_xyzrgb);
+    while (!viewer.wasStopped())
+    {
+    }
     // range image processing and show
     double minVal = 0.0;
     double maxVal = 0.0;
@@ -743,14 +771,101 @@ void IrRgbRegistration::fusion_ir_lidar()
 
 }   
 
+void IrRgbRegistration::get_ir_rgb_match_pts()
+{
+  ROS_INFO("------------ START FUSION infrared lidar! ------------");
+  pcl::PointCloud<pcl::PointXYZI> down_sample_pc_xyzi; // pts
+  if (IsVoxelFilter) {
+      // 体素滤波
+      pcl::VoxelGrid<pcl::PointXYZI> downSizeFilter; 
+      downSizeFilter.setInputCloud(this->pc_ptr_xyzi); // ptr
+      downSizeFilter.setLeafSize(0.2, 0.2, 0.2);
+      downSizeFilter.filter(down_sample_pc_xyzi);
+  }
+  else{
+    down_sample_pc_xyzi = *this->pc_ptr_xyzi;
+  }
+  int size = down_sample_pc_xyzi.points.size();
+  pair_pts.resize(0);
+  
+  for (int i = 0; i < size; i++)
+  {
+      // project get the photo coordinate
+      // pcl::PointXYZRGB pointRGB;
+      pcl::PointXYZI point_xyzi = down_sample_pc_xyzi.points[i];
+
+      double a_[4] = { point_xyzi.x, point_xyzi.y, point_xyzi.z, 1.0 };
+      cv::Mat pos(4, 1, CV_64F, a_);
+      cv::Mat ir_pos(this->P_ir2lidar * pos);
+      cv::Mat rgb_pos(this->P_rgb2lidar * pos);
+
+
+      float ir_x = (float)(ir_pos.at<double>(0, 0) / ir_pos.at<double>(2, 0));
+      float ir_y = (float)(ir_pos.at<double>(1, 0) / ir_pos.at<double>(2, 0));
+      
+      float rgb_x = (float)(rgb_pos.at<double>(0, 0) / rgb_pos.at<double>(2, 0));
+      float rgb_y = (float)(rgb_pos.at<double>(1, 0) / rgb_pos.at<double>(2, 0));
+      
+      // ROS_INFO("x = %f, y =%f", x, y);
+      // Trims viewport according to image size
+      if (point_xyzi.x >= 0)
+      {
+        if (ir_x >= 0 && ir_x <= this->ir_img_width - 1 && ir_y >= 0 && ir_y <= this->ir_img_height - 1 && 
+            rgb_x >= 0 && rgb_x <= this->rgb_img_width - 1 && rgb_y >= 0 && rgb_y <= this->rgb_img_height - 1)
+        {
+          PairPt pair_pt(cv::Point2f(ir_x, ir_y), cv::Point2f(rgb_x, rgb_y));
+          pair_pts.push_back(pair_pt);
+        }
+      }
+  }
+  ROS_INFO("there are %d match pts\n", pair_pts.size());
+} 
+    
+void IrRgbRegistration::draw_matches(const std::vector<PairPt> &pair_pts, const cv::Mat &ir_img, const cv::Mat &rgb_img)
+{
+  std::vector<cv::KeyPoint> rgb_key_pts, ir_key_pts;
+  std::vector<cv::DMatch> matches;
+  int index = 0;
+  for(auto pair_pt: pair_pts)
+  {
+    cv::KeyPoint rgb_pt(pair_pt.rgb_pt, 1.f);
+    cv::KeyPoint ir_pt(pair_pt.ir_pt, 1.f);
+    rgb_key_pts.push_back(rgb_pt);
+    ir_key_pts.push_back(ir_pt);
+    if (index % 200 == 0) matches.push_back(cv::DMatch(index, index ,0.0));
+    index++;
+  }
+  cv::Mat match_img;
+  cv::drawMatches(rgb_img, rgb_key_pts, ir_img, ir_key_pts, matches, match_img, cv::Scalar(0, 255, 0));
+  cv::imshow("match_img", match_img);
+  cv::waitKey(0);
+
+
+
+};
+
+
+
 
 
 int main(int argc, char **argv) {
   ros::init(argc, argv, "review_color_lidar_node");
   IrRgbRegistration registration_obj;
-  registration_obj.fusion_ir_lidar();
+  // #define DEBUG_POSE
+  #ifdef DEBUG_POSE
+  std::cout << "P_rgb2lidar = " << registration_obj.P_rgb2lidar << std::endl;
+  std::cout << "P_ir2lidar = " << registration_obj.P_ir2lidar << std::endl;
+  std::cout << "T_rgb2lidar = " << registration_obj.T_rgb2lidar << std::endl;
+  std::cout << "T_ir2lidar = " << registration_obj.T_ir2lidar << std::endl;
+  
+  #endif
+  // registration_obj.fusion_ir_lidar();
+  // registration_obj.fusion_rgb_lidar();
 
   // registration_obj.choose_corners();
+  registration_obj.get_ir_rgb_match_pts();
+  registration_obj.draw_matches(registration_obj.pair_pts, registration_obj.ir_img , registration_obj.rgb_img);
+
   
   ROS_INFO("there are %d args", argc);
   if (strcmp(argv[1], "true") == 0) 
