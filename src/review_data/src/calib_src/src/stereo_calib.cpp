@@ -178,33 +178,28 @@ static inline void read(const FileNode& node, Settings& x, const Settings& defau
 }
 
 
-bool runCalibrationAndSave(Settings& s, Size imageSize, Mat&  cameraMatrix, Mat& distCoeffs,
-                           vector<vector<Point2f> > imagePoints, float grid_width, bool release_object);
-
-
-static void calcBoardCornerPositions(Size boardSize, float squareSize, vector<Point3f>& corners,
-                                     Settings::Pattern patternType /*= Settings::CHESSBOARD*/)
+double calculate_epipolar_loss(const cv::Mat &fundamental_mat, const vector< vector< Point2f > >&ir_img_pts, const vector< vector< Point2f > >&rgb_img_pts)
 {
-    corners.clear();
-
-    switch(patternType)
+    int pts_size = ir_img_pts.size() * ir_img_pts[0].size();
+    double avg_error = 0.0;
+    for(int i = 0; i < ir_img_pts.size(); ++i)
     {
-    case Settings::CHESSBOARD:
-    case Settings::CIRCLES_GRID:
-        for( int i = 0; i < boardSize.height; ++i )
-            for( int j = 0; j < boardSize.width; ++j )
-                corners.push_back(Point3f(j*squareSize, i*squareSize, 0));
-        break;
-
-    case Settings::ASYMMETRIC_CIRCLES_GRID:
-        for( int i = 0; i < boardSize.height; i++ )
-            for( int j = 0; j < boardSize.width; j++ )
-                corners.push_back(Point3f((2*j + i % 2)*squareSize, i*squareSize, 0));
-        break;
-    default:
-        break;
-    }
+        for(int j = 0; j < ir_img_pts[0].size(); ++j)
+        {
+            cv::Point2f ir_pts = ir_img_pts[i][j];
+            cv::Point2f rgb_pts = rgb_img_pts[i][j];
+            cv::Mat ir_pt = (cv::Mat_<double>(3, 1) << ir_pts.x, ir_pts.y, 1.0);
+            cv::Mat rgb_pt = (cv::Mat_<double>(1, 3) << rgb_pts.x, rgb_pts.y, 1.0);
+            cv::Mat res = (rgb_pt * fundamental_mat * ir_pt);
+            double error = pow(res.at<double>(0, 0), 2);
+            avg_error += error;
+        }
+    }   
+    avg_error /= pts_size;
+    // printf("avg_error = %f\n", avg_error); 
+    return avg_error;
 }
+
 
 int main(int argc, char* argv[])
 {
@@ -343,73 +338,64 @@ int main(int argc, char* argv[])
                 drawChessboardCorners( rgb_img, s.boardSize, Mat(rgbPointBuf), rgb_found );
         
         }
-        // imshow("ir Image View", ir_img);
-        // imshow("rgb Image View", rgb_img);
+        imshow("ir Image View", ir_img);
+        imshow("rgb Image View", rgb_img);
         char key;
         if (s.VISUALIZE_KEYPTS){key = (char)waitKey(0);}
         else {key = (char)waitKey(100);}
     }
     if (ir_image_pts.size() < 1){std::cout << "[ERROR] cannot detect pts simultaneously!"; return -1;}
 
-    cv::Mat rgb_camera_mat, rgb_dist_mat, ir_camera_mat, ir_dist_mat;
-    s.readCameraMat(s.ir_calib_addr, ir_camera_mat, ir_dist_mat);
-    s.readCameraMat(s.rgb_calib_addr, rgb_camera_mat, rgb_dist_mat);
-    std::cout << "rgb_mat = " << rgb_camera_mat << std::endl << "ir_mat = " << ir_camera_mat << std::endl;
+    cv::Mat K_rgb, D_rgb, K_ir, D_ir;
+    s.readCameraMat(s.ir_calib_addr, K_ir, D_ir);
+    s.readCameraMat(s.rgb_calib_addr, K_rgb, D_rgb);
+    std::cout << "rgb_mat = " << K_rgb << std::endl << "ir_mat = " << K_ir << std::endl;
     
 
     cv::Mat R, T, E, F;
     stereoCalibrate(objectPoints, ir_image_pts, rgb_image_pts, 
-    ir_camera_mat,ir_dist_mat, rgb_camera_mat, rgb_dist_mat, ir_img.size(), 
+    K_ir,D_ir, K_rgb, D_rgb, ir_img.size(), 
     R, T, E, F);
     cv::FileStorage fs1(s.outputFileName, cv::FileStorage::WRITE);
-    fs1 << "irCameraMat" << ir_camera_mat;
-    fs1 << "rgbCameraMat" << rgb_camera_mat;
-    fs1 << "irDistCoeff" << ir_dist_mat;
-    fs1 << "rgbDistCoeff" << rgb_dist_mat;
+    fs1 << "irCameraMat" << K_ir;
+    fs1 << "rgbCameraMat" << K_rgb;
+    fs1 << "irDistCoeff" << D_ir;
+    fs1 << "rgbDistCoeff" << D_rgb;
     fs1 << "R" << R;
     fs1 << "T" << T;
     fs1 << "E" << E;
     fs1 << "F" << F;
-    cv::Mat R1, R2, P1, P2, Q;
-    stereoRectify(ir_camera_mat, ir_dist_mat, rgb_camera_mat, rgb_dist_mat, ir_img.size(), R, T, R1, R2, P1, P2, Q);
-    fs1 << "R1" << R1;
-    fs1 << "R2" << R2;
-    fs1 << "P1" << P1;
-    fs1 << "P2" << P2;
-    fs1 << "Q" << Q;
+    // ////////////////////////////////////////////////////////////
+    // F 是将ir(img1)点映射到rgb(img2)上的基础矩阵， R_{2->1}, R_rgb2ir
+    // ////////////////////////////////////////////////////////////
+    double avg_error = calculate_epipolar_loss(F, ir_image_pts, rgb_image_pts);
+    fs1 << "Epipolar MSE" << avg_error;
+    
+    // /////////////////////////////////////////////////////////////    
+    cv::Mat R_ir, R_rgb, P_ir, P_rgb, Q;
+    stereoRectify(K_ir, D_ir, K_rgb, D_rgb, rgb_img.size(), R, T, R_ir, R_rgb, P_ir, P_rgb, Q);
+    fs1 << "R_ir" << R_ir;
+    fs1 << "R_rgb" << R_rgb;
+    fs1 << "P_ir" << P_ir;
+    fs1 << "P_rgb" << P_rgb;
+    fs1 << "Q" << Q;    
+    // //////////////////////////////////////////////////////////////////////
+    // show disparity image
+    // /////////////////////////////////////////////////////////////////////
+    cv::Mat lmapx, lmapy, rmapx, rmapy;
+    cv::Mat imgU1, imgU2;
+
+    cv::initUndistortRectifyMap(K_ir, D_ir, R_ir, P_ir, rgb_img.size(), CV_32F, lmapx, lmapy);
+    cv::initUndistortRectifyMap(K_rgb, D_rgb, R_rgb, P_rgb, rgb_img.size(), CV_32F, rmapx, rmapy);
+    cv::remap(ir_img, imgU1, lmapx, lmapy, cv::INTER_LINEAR);
+    cv::remap(rgb_img, imgU2, rmapx, rmapy, cv::INTER_LINEAR);
+    std::cout << imgU1.size() << imgU2.size() << std::endl;
+    cv::imshow("rectified ir", imgU1);
+    cv::imshow("rectified rgb", imgU2);
+    if(s.VISUALIZE_KEYPTS)
+        cv::waitKey(0);
+    else
+        cv::waitKey(50);
     printf("finish epipolar Rectification\n");
 };
 
-//! [compute_errors]
-static double computeReprojectionErrors( const vector<vector<Point3f> >& objectPoints,
-                                         const vector<vector<Point2f> >& imagePoints,
-                                         const vector<Mat>& rvecs, const vector<Mat>& tvecs,
-                                         const Mat& cameraMatrix , const Mat& distCoeffs,
-                                         vector<float>& perViewErrors, bool fisheye)
-{
-    vector<Point2f> imagePoints2;
-    size_t totalPoints = 0;
-    double totalErr = 0, err;
-    perViewErrors.resize(objectPoints.size());
-
-    for(size_t i = 0; i < objectPoints.size(); ++i )
-    {
-        if (fisheye)
-        {
-            fisheye::projectPoints(objectPoints[i], imagePoints2, rvecs[i], tvecs[i], cameraMatrix,
-                                   distCoeffs);
-        }
-        else
-        {
-            projectPoints(objectPoints[i], rvecs[i], tvecs[i], cameraMatrix, distCoeffs, imagePoints2);
-        }
-        err = norm(imagePoints[i], imagePoints2, NORM_L2);
-
-        size_t n = objectPoints[i].size();
-        perViewErrors[i] = (float) std::sqrt(err*err/n);
-        totalErr        += err*err;
-        totalPoints     += n;
-    }
-
-    return std::sqrt(totalErr/totalPoints);
-}

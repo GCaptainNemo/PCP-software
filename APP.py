@@ -15,7 +15,10 @@ from PyQt5.QtCore import QThread, pyqtSignal,pyqtSlot
 from PyQt5 import QtGui, QtCore, QtWidgets
 import qdarkstyle
 
-from collect_data.msg import self_image
+import queue
+import threading
+import time
+
 
 # bridge = CvBridge()
 
@@ -24,34 +27,10 @@ COLLECT_CALIB_LAUNCH_ADDR = "/home/why/ROS_self/publish_collect_review_data/src/
 PUBLISH_LAUNCH_ADDR = "/home/why/ROS_self/publish_collect_review_data/src/collect_data/launch/publish_raw_data.launch"
 START_PUBLISH_FLAG = 0
 
-        
+IR_DEVICE = 4
+RGB_DEVICE = 'rtsp://admin:a12345678@192.168.1.64/1'
 
-class CameraRosNode(QThread):
-    rgb_image_signal = pyqtSignal() 
-    ir_image_signal = pyqtSignal() 
-    def __init__(self):
-        QThread.__init__(self)  #创建线程
-        rospy.init_node('camera_ros_node') #创建ros节点
-        rospy.Subscriber('/rgb_remap', self_image, self.callback_rgb_img)
-        rospy.Subscriber('/ir_remap', self_image, self.callback_ir_img)
-        self.ir_img = None
-        self.rgb_img = None
-
-    def callback_ir_img(self, data):
-        self.ir_img = np.ndarray(shape=(data.height, data.width, data.channels), dtype=np.uint8, buffer=data.data) # 将自定义图像消息转化为图像
-        self.ir_image_signal.emit()
-
-    def callback_rgb_img(self, data):
-        self.rgb_img = np.ndarray(shape=(data.height, data.width, data.channels), dtype=np.uint8, buffer=data.data) # 将自定义图像消息转化为图像
-        self.rgb_image_signal.emit()
-        # cv2.imshow("rgb", image)
-        # cv2.waitKey(0)
-        # self.raw_image_signal.emit()
-
-    def run(self):
-        #  spin()后才能进入callback函数，spin后的程序不能执行，除非跳出
-        rospy.spin()    
-
+           
 class ThreadStartRosbag(QtCore.QThread):
     signal_finished = pyqtSignal(int)
     def __init__(self):
@@ -66,58 +45,175 @@ class ThreadStartRosbag(QtCore.QThread):
         else:
             self.signal_finished.emit(1)
 
-            
 
 
-class MyWinPicture(QtWidgets.QWidget):
-    def __init__(self):
+class MultiThreadWinPicture(QtWidgets.QWidget):
+    def __init__(self, device_info):
         """
-        Rewrite Qwidget to display pictures.
-        param flag_:
-        Two mode: 1. flag_ = 1, display through pictures address(self.dir)
-                  2. flag_ = 0 display through pictures (self.picture_matrix)
+        Rewrite Qwidget to display pictures in label widget.
         """
-        super(MyWinPicture, self).__init__()
-        self.pixmap = None
+        super(MultiThreadWinPicture, self).__init__()
+        self.device_info = device_info
+        self.cap = cv2.VideoCapture()
+        self.set_ui()
+        self.init_process()
+        self.img_queue = queue.Queue()
 
-    def paintEvent(self, event):
-        try:
-            if self.pixmap is not None:
-                painter = QtGui.QPainter(self)
-                painter.drawPixmap(self.rect(), self.pixmap)
-        except Exception as e:
-            print(e)
+    def init_process(self):
+        self.processes = []
+        self.processes.append(threading.Thread(target=self.image_put))
+        self.processes.append(threading.Thread(target=self.image_get))
+        [process.setDaemon(True) for process in self.processes]   # 主线程退出则退出
+
+        # self.processes.append(putStoppableThread(self.cap))
+        # self.processes.append(getStoppableThread(self.camera_label))
+        # [process.start() for process in self.processes]
+
+    
+    def image_put(self):
+        while True:
+            self.img_queue.put(self.cap.read()[1])
+            self.img_queue.get() if self.img_queue.qsize() > 1 else time.sleep(0.01)
+
+    def image_get(self):
+        while True:
+            try:
+                self.image = self.img_queue.get()
+                img = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
+                # cv2.imshow("123", frame)
+                # cv2.waitKey(1)
+                # if self.image is None or self.image.size == 0:
+                #     continue
+                show_image = QtGui.QImage(img.data, img.shape[1],img.shape[0], QtGui.QImage.Format_RGB888)
+                self.camera_label.setPixmap(QtGui.QPixmap.fromImage(show_image))
+                time.sleep(0.1)  # if update label too frequently will crash
+            except Exception as e:
+                print(e)
+
+    def set_ui(self):
+        self.camera_label = QtWidgets.QLabel("")
+        self.camera_label.setScaledContents(False)
+        vlayout = QtWidgets.QVBoxLayout()
+        vlayout.addWidget(self.camera_label)
+
+        # #########################################
+        # add button
+        # ########################################
+        # hlayout = QtWidgets.QHBoxLayout()
+        # self.start_button = QtWidgets.QPushButton("open")
+        # self.start_button.clicked.connect(self.open_camera)
+        # self.close_button = QtWidgets.QPushButton("close")
+        # self.close_button.clicked.connect(self.close_camera) # cannot stop thread
+        
+        # hlayout.addWidget(self.start_button)
+        # hlayout.addWidget(self.close_button)
+        # vlayout.addLayout(hlayout)
+        # # ####################################################
+        self.setLayout(vlayout)
+
+  
+    def open_camera(self):
+
+        flag = self.cap.open(self.device_info)
+        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
+        if flag == False:
+            msg = QtWidgets.QMessageBox.information(self, "[error]", 
+            str(self.device_info) + " camera can not connect!", QtWidgets.QMessageBox.Ok)
+        else:
+            [process.start() for process in self.processes]
+
+
+    # def close_camera(self):
+    #     ...
+    #     # [process.pause() for process in self.processes]
+        
+    #     # self.cap.release()
+    #     # self.camera_label.clear()
+
+
+class SingleThreadWinPicture(QtWidgets.QWidget):
+    def __init__(self, device_info):
+        """
+        use timer to trigger update label pixmap. cannot display real time
+        Rewrite Qwidget to display pictures in label widget.
+        """
+        super(SingleThreadWinPicture, self).__init__()
+        self.device_info = device_info
+        self.cap = cv2.VideoCapture()
+        self.timer = QtCore.QTimer() #初始化定时器
+        self.set_ui()
+        self.init_slot()
+
+    def set_ui(self):
+        self.camera_label = QtWidgets.QLabel("")
+        self.camera_label.setScaledContents(True)
+        vlayout = QtWidgets.QVBoxLayout()
+        vlayout.addWidget(self.camera_label)
+        self.setLayout(vlayout)
+
+    def init_slot(self):
+        self.timer.timeout.connect(self.show_camera)
+    
+    def show_camera(self):
+        flag, self.image = self.cap.read()
+        # if self.image.shape[0] > 800:
+        #     show = cv2.resize(self.image,(480,320))
+        # else:
+        #     show = self.image
+        self.image = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
+        if flag:
+            show_image = QtGui.QImage(self.image.data, self.image.shape[1],self.image.shape[0], QtGui.QImage.Format_RGB888)
+            self.camera_label.setPixmap(QtGui.QPixmap.fromImage(show_image))
+
+    def open_camera(self):
+        flag = self.cap.open(self.device_info)
+        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
+        if flag == False:
+            msg = QtWidgets.QMessageBox.information(self, "[error]", 
+            str(self.device_info) + " camera can not connect!", QtWidgets.QMessageBox.Ok)
+        else:
+            self.timer.start(30)
+
+
+    def close_camera(self):
+        self.timer.stop()
+        self.cap.release()
+        self.camera_label.clear()
 
 
 class MainWindow(QtWidgets.QWidget):
-    def __init__(self) -> None:
+    def __init__(self):
         super(MainWindow, self).__init__()
         VSplitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         HSplitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
 
 
         self.setWindowTitle("PAC")   # publish and collect data
-        self.rgb_widget = MyWinPicture()
-        self.ir_widget = MyWinPicture()
+        # self.rgb_widget = SingleThreadWinPicture(RGB_DEVICE)
+        self.ir_widget = SingleThreadWinPicture(IR_DEVICE)
+        self.rgb_widget = MultiThreadWinPicture(RGB_DEVICE)
+        # self.ir_widget = MultiThreadWinPicture(IR_DEVICE)
+
         VSplitter.addWidget(self.rgb_widget)
         VSplitter.addWidget(self.ir_widget)
         # ###############################################################3
         Hlayout_1 = QtWidgets.QHBoxLayout()
         self.btn_start_publish = QtWidgets.QPushButton('Start Publish')
-        self.btn_stop_publish = QtWidgets.QPushButton('Stop Publish')
-        self.btn_start_collect = QtWidgets.QPushButton('Collect ir/rgb/lidar triplet')
-        self.btn_start_calib = QtWidgets.QPushButton('Collect ir/rgb pair')
+        # self.btn_stop_publish = QtWidgets.QPushButton('Stop Publish')
+        self.btn_start_collect_triplet = QtWidgets.QPushButton('Collect ir/rgb/lidar triplet')
+        self.btn_start_collect_pair = QtWidgets.QPushButton('Collect ir/rgb pair')
         Hlayout_1.addWidget(self.btn_start_publish)
-        Hlayout_1.addWidget(self.btn_stop_publish)
+        # Hlayout_1.addWidget(self.btn_stop_publish)
 
-        Hlayout_1.addWidget(self.btn_start_collect)
-        Hlayout_1.addWidget(self.btn_start_calib)
+        Hlayout_1.addWidget(self.btn_start_collect_triplet)
+        Hlayout_1.addWidget(self.btn_start_collect_pair)
         self.publish_launch = None
         self.btn_start_publish.clicked.connect(self.start_publish)
-        self.btn_stop_publish.clicked.connect(self.stop_publish)
 
-        self.btn_start_collect.clicked.connect(self.start_collect_data)
-        self.btn_start_calib.clicked.connect(self.start_collect_calib)
+        # self.btn_stop_publish.clicked.connect(self.stop_publish)
+
+        self.btn_start_collect_triplet.clicked.connect(self.start_collect_triplet)
+        self.btn_start_collect_pair.clicked.connect(self.start_collect_pair)
 
         # ################################################################
         Hlayout_2 = QtWidgets.QHBoxLayout()
@@ -210,60 +306,59 @@ class MainWindow(QtWidgets.QWidget):
         # ##############################################################
         # ros node subscribe
         # ##############################################################
-        self.subscribe_thread = CameraRosNode()
-        self.subscribe_thread.rgb_image_signal.connect(self.update_rgb_img)
-        self.subscribe_thread.ir_image_signal.connect(self.update_ir_img)
+        # self.subscribe_rgb_thread = cameraCaptureThread(RGB_DEVICE)
+        # self.subscribe_ir_thread = cameraCaptureThread(IR_DEVICE)
+        # self.camera_capture_controller = cameraCaptureController()
+        # self.stop_event = threading.Event()
+        # self.stop_event.clear()
+        # self.update_ir_thread = threading.Thread(target=self.update_ir_img)
+        # self.update_ir_thread.start()
+        # self.update_rgb_thread = threading.Thread(target=self.update_rgb_img)
+        # self.update_rgb_thread.start()
+        
+        # self.subscribe_thread = CameraRosNode()
+       
+        
+
+        # self.subscribe_rgb_thread.rgb_image_signal.connect(self.update_rgb_img)
+        # self.subscribe_ir_thread.ir_image_signal.connect(self.update_ir_img)
         self.thread_start_rosbag = ThreadStartRosbag()
         self.thread_start_rosbag.signal_finished.connect(self.finished_rosbag_record)
 
-    
 
-    def update_ir_img(self):
-        """
-        slot function
-        """
-        new_img = self.subscribe_thread.ir_img.copy()
-        dst_img = QtGui.QImage(new_img, new_img.shape[1],
-                                 new_img.shape[0], QtGui.QImage.Format_RGB888)
-        self.ir_widget.pixmap = QtGui.QPixmap.fromImage(dst_img)
-        self.ir_widget.repaint()
-
-    def update_rgb_img(self):
-        """
-        slot function
-        """
-        new_img = self.subscribe_thread.rgb_img.copy()
-        new_img = cv2.resize(new_img, (int(new_img.shape[0] / 3), int(new_img.shape[1] / 3)))
-        new_img = cv2.cvtColor(new_img, cv2.COLOR_BGR2RGB)
-        # new_img = new_img[:, :, ::-1]
-        dst_img = QtGui.QImage(new_img, new_img.shape[1],
-                                 new_img.shape[0], QtGui.QImage.Format_RGB888)
-        self.rgb_widget.pixmap = QtGui.QPixmap.fromImage(dst_img)
-        self.rgb_widget.repaint()
-       
+        # #############################################################
+        try:
+            self.get_current_prefix()
+            self.get_current_recordtime()
+            self.get_current_savedir()
+            self.get_info()
+        except Exception as e:
+            pass
+   
     
     def start_publish(self):
         global START_PUBLISH_FLAG
         START_PUBLISH_FLAG = 1
-        uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
-        roslaunch.configure_logging(uuid)
-        self.publish_launch = roslaunch.parent.ROSLaunchParent(
-            uuid, [PUBLISH_LAUNCH_ADDR])
-        self.publish_launch.start()
-        self.subscribe_thread.start()
-        
-     
-        QtWidgets.QMessageBox.information(self, "[INFO]", "finish start publishing", QtWidgets.QMessageBox.Ok)
+        # uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
+        # roslaunch.configure_logging(uuid)
+        # self.publish_launch = roslaunch.parent.ROSLaunchParent(
+        #     uuid, [PUBLISH_LAUNCH_ADDR])
+        # self.publish_launch.start()
+        # self.subscribe_rgb_thread.start()
+        # self.subscribe_ir_thread.start()
+        self.ir_widget.open_camera()
+        self.rgb_widget.open_camera()
+        # QtWidgets.QMessageBox.information(self, "[INFO]", "finish start publishing", QtWidgets.QMessageBox.Ok)
 
-    def stop_publish(self):
-        global START_PUBLISH_FLAG
-        START_PUBLISH_FLAG = 0
-        if self.publish_launch:
-            self.publish_launch.shutdown()
-            # self.subscribe_thread.quit()
-            QtWidgets.QMessageBox.information(self, "[INFO]", "finish stop publishing", QtWidgets.QMessageBox.Ok)
+    # def stop_publish(self):
+    #     global START_PUBLISH_FLAG
+    #     START_PUBLISH_FLAG = 0
+    #     if self.publish_launch:
+    #         self.publish_launch.shutdown()
+    #         # self.subscribe_thread.quit()
+    #         QtWidgets.QMessageBox.information(self, "[INFO]", "finish stop publishing", QtWidgets.QMessageBox.Ok)
 
-    def start_collect_data(self):
+    def start_collect_triplet(self):
         global START_PUBLISH_FLAG
         if START_PUBLISH_FLAG:
             ir_file_name, rgb_file_name, lidar_file_name = self.get_data_save_dir()
@@ -279,8 +374,8 @@ class MainWindow(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.information(self, "ERROR", COLLECT_DATA_LAUNCH_ADDR  + "dont have record time!", QtWidgets.QMessageBox.Ok)
                 return
             record_time = int(res[0][11:])
-            rgb_img = self.subscribe_thread.rgb_img.copy()
-            ir_img = self.subscribe_thread.ir_img.copy()
+            rgb_img = self.rgb_widget.image.copy()
+            ir_img = self.ir_widget.image.copy()
             cv2.imwrite(ir_file_name, ir_img)
             cv2.imwrite(rgb_file_name, rgb_img)
             self.thread_start_rosbag.record_time = record_time
@@ -391,12 +486,14 @@ class MainWindow(QtWidgets.QWidget):
 
 
         
-    def start_collect_calib(self):
+    def start_collect_pair(self):
         global START_PUBLISH_FLAG
         if START_PUBLISH_FLAG:
             ir_file_name, rgb_file_name = self.get_calib_save_dir()
-            rgb_img = self.subscribe_thread.rgb_img.copy()
-            ir_img = self.subscribe_thread.ir_img.copy()
+            rgb_img = self.rgb_widget.image.copy()
+            ir_img = self.ir_widget.image.copy()
+            # rgb_img = self.subscribe_rgb_thread.rgb_img.copy()
+            # ir_img = self.subscribe_rgb_thread.ir_img.copy()
             cv2.imwrite(ir_file_name, ir_img)
             cv2.imwrite(rgb_file_name, rgb_img)
             QtWidgets.QMessageBox.information(self, "INFO", "finish collecting ir/rgb pair to " + ir_file_name + "\n" + rgb_file_name, 

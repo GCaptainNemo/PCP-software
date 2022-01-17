@@ -71,7 +71,27 @@ roslaunch collect_data collect_calib.launch
 
 
 
+### 4. 回顾数据
 
+#### 4.1 单目标定
+
+e.g., 对collect_data.launch中save_dir下前缀为0000，后缀为ir的图像进行单目标定。若遍历所有文件则将0000替换为`all`
+
+```
+python3 ./mono_calib.py 0000 ir
+```
+
+#### 4.2 立体标定
+
+e.g., 对collect_data.launch中save_dir下前缀为0000的ir/rgb图像对进行立体标定计算外参。若遍历所有文件则将0000替换为`all`
+
+```
+python3 ./stereo_calib.py 0000
+```
+
+<p align="center"><img src="./resources/stereo_calib.png" width=80%></p>
+
+<h6 align="center">立体矫正结果</h6>
 
 ## 三、PAC客户端使用方法
 
@@ -80,7 +100,9 @@ pip install catkin-tools
 pip install rospkg defusedxml
 ````
 
-客户端取名PAC(publish and collect)，大体上是对以上命令行的封装，使用python3 PyQt5开发，由于python3中CVBRIDGE使用具有问题，因此使用`ir_rgb_remap`节点进行了数据格式sensor_msgs::Image->collect_data::self_image(自定义msg格式)转换，再在客户端进行collect_data::self_image解码，显示在客户端中。
+客户端取名PAC(publish and collect)，大体上是对以上命令行的封装，使用python3 PyQt5开发。
+
+
 
 <p align="center"><img src="./resources/app.png" width=50%></p>
 
@@ -125,4 +147,6 @@ pip install rospkg defusedxml
 装`opencv-contrib-python-headless`可以解决冲突
 
 [9] [processon在线思维导图](https://www.processon.com/) 
+
+
 

@@ -1,6 +1,6 @@
 <launch>
 	<param name="save_dir" type="string" value="/media/why/LENOVO_USB_HDD/ir_rgb_registration_data_collect/" />
-	<param name="prefix" type="string" value="0003" />	
+	<param name="prefix" type="string" value="0014" />	
 	<!--param name="save_dir" type="string" value="/home/why/" /-->
 	<!--param name="prefix" type="string" value="static" /-->
 	<!--args: is_save, is_visualize-->        

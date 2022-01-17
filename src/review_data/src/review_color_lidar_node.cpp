@@ -1,6 +1,8 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/core/utility.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <image_transport/image_transport.h>
 #include <sensor_msgs/image_encodings.h>
@@ -47,8 +49,9 @@ typedef pcl::PointXYZI PointType;
 typedef pcl::PointCloud<PointType> PointCloudXYZI;
 typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloudXYZRGB;
 
-const bool IS_FILTER = true;
-const bool IS_IMAGE_CORRECTION = true;
+constexpr bool IS_FILTER = true;
+// constexpr bool IS_IMAGE_CORRECTION = true;
+constexpr bool IS_IMAGE_CORRECTION = false;
 
 std::vector<cv::Point2f> corners(0);
 std::vector<cv::Point2f> ir_corners(0);
@@ -111,13 +114,26 @@ void mapJet(double v, double vmin, double vmax, uint8_t &r, uint8_t &g,
 }
 
 
-class ImageLivoxFusion
+class IrRgbRegistration
 {
 public:
-    cv::Mat transform_matrix;    /**< from globol to image coordinate */
-    cv::Mat intrinsic_matrix;    /**< from local to image coordinate  */
-	cv::Mat extrinsic_matrix;    /**< from global to local coordinate */
-	cv::Mat dist_matrix;         /**< dist parameters  */
+    // Camera Matrix
+    // K: intrinsic matrix
+    // T: extrinsic matrix [R|t]
+    // P: projection matrix K[R|t]
+    // D: distortion matrix 
+    cv::Mat K_rgb;        
+	  cv::Mat T_rgb2lidar;    	  
+    cv::Mat P_rgb2lidar;    
+    cv::Mat D_rgb;    
+    
+    cv::Mat K_ir;
+    cv::Mat T_rgb2ir;
+    cv::Mat T_ir2lidar;
+    cv::Mat P_ir2lidar;
+    cv::Mat D_ir;
+
+public:
     int rgb_img_height;
     int rgb_img_width;
     int ir_img_height;
@@ -131,47 +147,77 @@ public:
 public:
     PointCloudXYZI::Ptr pc_ptr_xyzi; 
     PointCloudXYZRGB::Ptr pc_ptr_xyzrgb;
+    PointCloudXYZRGB::Ptr pc_ptr_xyzir;
+    
 
 public:
     ros::NodeHandle node_handle;
     std::string lidar_file_dir;
     std::string rgb_file_dir;
     std::string ir_file_dir;
+    std::string ir_rgb_stereo_dir;
     std::string save_dir;
     std::string prefix;
     
 public:
-  ImageLivoxFusion()
+  IrRgbRegistration()
   {
     ROS_INFO("------------ intialize ----------\n");
+    node_handle.getParam("save_dir",this->save_dir);
+    node_handle.getParam("prefix", this->prefix);
+    ROS_INFO("save_dir = %s", save_dir.c_str());
+    if(!IsFolderExist(save_dir.c_str())){ROS_ERROR("save dir doesn't exist"); throw -1;}
+    ROS_INFO("save dir exists!!");
+    // lidar_file_dir = save_dir + prefix + "_msg.bag";
+    this->lidar_file_dir = save_dir + prefix + "_lidar.bag";    
+    this->rgb_file_dir = save_dir + prefix + "_rgb.jpg";
+    this->ir_file_dir = save_dir + prefix + "_ir.jpg";
+    this->ir_rgb_stereo_dir = save_dir + prefix + "_stereocalib_ir.yaml";
+    if (!IsFileExist(lidar_file_dir.c_str()) || !IsFileExist(rgb_file_dir.c_str()) || !IsFileExist(ir_file_dir.c_str()) || !IsFileExist(ir_rgb_stereo_dir.c_str()))
+    {throw -1;}
+    
     pc_ptr_xyzi.reset(new PointCloudXYZI());
     pc_ptr_xyzrgb.reset(new PointCloudXYZRGB());
+    pc_ptr_xyzir.reset(new PointCloudXYZRGB());
     
-    // livox_sub = node_handle.subscribe("/livox/lidar", 100, &ImageLivoxFusion::livoxCallback, this);
+    // livox_sub = node_handle.subscribe("/livox/lidar", 100, &IrRgbRegistration::livoxCallback, this);
     
    
-    this->set_param();
+    get_rgb_param();  // get rgb camera params
+    get_ir_param();  // get ir camera params
+    get_datas();    // get data frame
+  
    
     
   };
 
-   ~ImageLivoxFusion()
+   ~IrRgbRegistration()
   {
   };
-  // get camera parameters
-  void set_param();
+  // get rgb camera parameters (K_rgb, D_rgb, T lidar->rgb)
+  void get_rgb_param();
 
+  // get ir camera parameters (K_ir, D_ir, T rgb->ir)
+  void get_ir_param();
+
+  // //////////////////////////////////////////////////////////////////////////
   // get lidar, infrared and visual image and fusion(get colored lidar)
-  int get_data_and_fusion();
+  void get_datas();
 
   // read visual image and infrared image 
   void get_imgs();
 
   // get lidar 
   void get_lidar();
+  // //////////////////////////////////////////////////////////////////////////
+  // projected lidar pts(world coordinate) to rgb(K_rgb * T_rgb->lidar) and infrared image(K_ir * T_ir->lidar) to get matching points.
+  void match_ir_rgb_pts();
 
   // fusion get colored pointcloud and range image
-  void fusion();
+  void fusion_rgb_lidar();
+
+  // fusion get ir colored pointclou
+  void fusion_ir_lidar();
 
   // choose image correspondance points
   void choose_corners();
@@ -181,11 +227,11 @@ public:
   
 };
 
-void ImageLivoxFusion::dlt()
+void IrRgbRegistration::dlt()
 {
     if (corners.size() != ir_corners.size()){return;}
     Eigen::Matrix3d int_mat;
-    cv::cv2eigen(this->intrinsic_matrix, int_mat);
+    cv::cv2eigen(this->K_rgb, int_mat);
     Eigen::Matrix3d inv_int_mat = int_mat.inverse();
     ROS_INFO_STREAM("int_mat = " << int_mat << "\n"); 
     std::vector<Eigen::Vector3d> world_pos_array(0);
@@ -279,7 +325,7 @@ void ImageLivoxFusion::dlt()
 
 }
 
-void ImageLivoxFusion::choose_corners()
+void IrRgbRegistration::choose_corners()
 {
     std::string blur_type = std::string("gaussian");
     bool extrapolate = true;
@@ -345,31 +391,17 @@ void ImageLivoxFusion::choose_corners()
 };
 
 
-int ImageLivoxFusion::get_data_and_fusion()
+void IrRgbRegistration::get_datas()
 {
-    node_handle.getParam("save_dir",save_dir);
-    node_handle.getParam("prefix", prefix);
-    ROS_INFO("save_dir = %s", save_dir.c_str());
-    if(!IsFolderExist(save_dir.c_str())){ROS_ERROR("save dir doesn't exist"); return -1;}
-    ROS_INFO("save dir exists!!");
-    // lidar_file_dir = save_dir + prefix + "_msg.bag";
-    lidar_file_dir = save_dir + prefix + "_lidar.bag";    
-    rgb_file_dir = save_dir + prefix + "_rgb.jpg";
-    ir_file_dir = save_dir + prefix + "_ir.jpg";
-    
-    
-    if (!IsFileExist(lidar_file_dir.c_str()) || !IsFileExist(rgb_file_dir.c_str()))
-    {return -1;}
+   
      // /////////////////////////////////////////////
     // get data and fusion
     // /////////////////////////////////////////////
     get_imgs();
     get_lidar();
-    fusion();
-    return 0;
 }
 
-void ImageLivoxFusion::set_param() 
+void IrRgbRegistration::get_rgb_param() 
 {
   // extrinsic matrix parameters
   XmlRpc::XmlRpcValue param_list;
@@ -431,47 +463,84 @@ void ImageLivoxFusion::set_param()
         ROS_INFO("PARAME SIZE = %d", int(tmp_value));
       }
   }
-  rgb_img_width = img_size[0];
-  rgb_img_height = img_size[1];
+  this->rgb_img_width = img_size[0];
+  this->rgb_img_height = img_size[1];
   range_img = cv::Mat::zeros(rgb_img_height, rgb_img_width, CV_32FC1);
   mask_img = cv::Mat::zeros(rgb_img_height, rgb_img_width, CV_8UC1);
   intensity_img = cv::Mat::zeros(rgb_img_height, rgb_img_width, CV_16UC1);
   // convert cv::Mat
   cv::Mat dist_array(5, 1, CV_64F, &dist[0]);
-  this->dist_matrix = dist_array.clone();
+  this->D_rgb = dist_array.clone();
   
-  cv::Mat Int(3, 3, CV_64F, &Intrinsic[0]);
-  this->intrinsic_matrix = Int.clone();
+  
+  this->K_rgb = cv::Mat(3, 3, CV_64F, &Intrinsic[0]);;
 
   
   cv::Mat ext_(4, 4, CV_64F, &Extrin_matrix[0]);
   cv::Mat invRt = ext_(cv::Rect(0, 0, 3, 3));
   cv::Mat R = invRt.t();
   cv::Mat invT = -R * ext_(cv::Rect(3, 0, 1, 3));
-  cv::hconcat(R, invT, this->extrinsic_matrix);
+  cv::hconcat(R, invT, this->T_rgb2lidar);
   // transform matrix: from global coordinate to image coordinate
-  this->transform_matrix = Int * this->extrinsic_matrix;
+  this->P_rgb2lidar = this->K_rgb * this->T_rgb2lidar;
 }
 
-void ImageLivoxFusion::get_imgs()
+void IrRgbRegistration::get_ir_param()
+{
+  cv::FileStorage fs(ir_rgb_stereo_dir, cv::FileStorage::READ);
+  fs["irCameraMat"] >>  this->K_ir;
+  fs["irDistCoeff"] >>  this->D_ir;
+  cv::Mat R_rgb2ir, t_rgb2ir;
+  fs["R"] >> R_rgb2ir;
+  fs["T"] >> t_rgb2ir;
+  cv::hconcat(R_rgb2ir, t_rgb2ir, this->T_rgb2ir);
+  cv::Mat R_rgb2lidar, t_rgb2lidar, R_ir2lidar, t_ir2lidar, R_ir2rgb, t_ir2rgb;
+  R_rgb2lidar = this->T_rgb2lidar(cv::Rect(0, 0, 3, 3));
+  t_rgb2lidar = this->T_rgb2lidar(cv::Rect(3, 0, 1, 3));
+  R_ir2rgb = R_rgb2ir.t();
+  t_ir2rgb = - R_ir2rgb * t_rgb2ir;
+  
+  
+  // //////////////////////////////////////////////
+  R_ir2lidar = R_ir2rgb * R_rgb2lidar;  // infrared camera relative pos to lidar
+  t_ir2lidar = R_ir2rgb * t_rgb2lidar + t_ir2rgb;
+  cv::hconcat(R_ir2lidar, t_ir2lidar, this->T_ir2lidar);
+  this->P_ir2lidar = this->K_ir * this->T_ir2lidar;
+  ROS_INFO_STREAM("P_ir2lidar = " << P_ir2lidar << std::endl);
+
+  // cv::vconcat(this->T_rgb2ir, )
+}
+
+void IrRgbRegistration::get_imgs()
 {
   this->rgb_img = cv::imread(rgb_file_dir, -1);
   if (IS_IMAGE_CORRECTION){
     cv::Mat undist_img;
-    cv::undistort(rgb_img, undist_img, this->intrinsic_matrix, this->dist_matrix);
+    cv::undistort(rgb_img, undist_img, this->K_rgb, this->D_rgb);
     rgb_img = undist_img.clone();
   }
   this->ir_img = cv::imread(ir_file_dir, -1);
-  ir_img_height = ir_img.rows;
-  ir_img_width = ir_img.cols;
-  cv::Size dst_size(rgb_img_width, rgb_img_height);
+  if (IS_IMAGE_CORRECTION){
+    cv::Mat undist_img;
+    cv::undistort(ir_img, undist_img, this->K_ir, this->D_ir);
+    ir_img = undist_img.clone();
+  }
+  this->ir_img_height = ir_img.rows;
+  this->ir_img_width = ir_img.cols;
+  ROS_INFO("RGB_IMG (rows, cols, channels) = (%d, %d, %d)\n", rgb_img.rows, rgb_img.cols, rgb_img.channels());
+  ROS_INFO("IR_IMG (rows, cols, channels) = (%d, %d, %d)\n", ir_img.rows, ir_img.cols, ir_img.channels());
+  cv::imshow("ir_img", ir_img);
+  cv::imshow("rgb_img", rgb_img);
+  cv::waitKey(0);
+
+  // cv::Size dst_size(rgb_img_width, rgb_img_height);
   
-  cv::resize(ir_img, ir_img, dst_size, cv::INTER_CUBIC);
+  // cv::resize(ir_img, ir_img, dst_size, cv::INTER_CUBIC);
 //   cv::imshow("src", rgb_img);
 //   cv::waitKey(0);
 };
 
-void ImageLivoxFusion::get_lidar()
+void IrRgbRegistration::get_lidar()
 {
     // cannot get lidar
     ROS_INFO("------------ START GET LIDAR %s! ------------", lidar_file_dir.c_str());
@@ -519,9 +588,9 @@ void ImageLivoxFusion::get_lidar()
 
 
 
-void ImageLivoxFusion::fusion()
+void IrRgbRegistration::fusion_rgb_lidar()
 {
-    ROS_INFO("------------ START FUSION! ------------");
+    ROS_INFO("------------ START FUSION rgb lidar! ------------");
     int size = pc_ptr_xyzi->points.size();
     for (int i = 0; i < size; i++)
     {
@@ -535,7 +604,7 @@ void ImageLivoxFusion::fusion()
         float intensity = pc_ptr_xyzi->points[i].intensity;
         double a_[4] = { pointRGB.x, pointRGB.y, pointRGB.z, 1.0 };
         cv::Mat pos(4, 1, CV_64F, a_);
-        cv::Mat newpos(this->transform_matrix * pos);
+        cv::Mat newpos(this->P_rgb2lidar * pos);
 
         float x = (float)(newpos.at<double>(0, 0) / newpos.at<double>(2, 0));
         float y = (float)(newpos.at<double>(1, 0) / newpos.at<double>(2, 0));
@@ -596,7 +665,7 @@ void ImageLivoxFusion::fusion()
     
     normalize_range_img.convertTo(range_image_8uc1,CV_8UC1,255.0);
     ROS_INFO_STREAM("convertTo CV_8UC1");
-	ROS_INFO_STREAM("ImgColorC3.type()" << range_image_8uc1.type());
+	  ROS_INFO_STREAM("ImgColorC3.type()" << range_image_8uc1.type());
     
 
     cv::applyColorMap(range_image_8uc1, color_range_img, cv::COLORMAP_JET);
@@ -611,30 +680,91 @@ void ImageLivoxFusion::fusion()
 }   
 
 
+void IrRgbRegistration::fusion_ir_lidar()
+{
+    ROS_INFO("------------ START FUSION infrared lidar! ------------");
+    int size = pc_ptr_xyzi->points.size();
+    for (int i = 0; i < size; i++)
+    {
+        // project get the photo coordinate
+        // pcl::PointXYZRGB pointRGB;
+        pcl::PointXYZRGB pointRGB;
+
+        pointRGB.x = pc_ptr_xyzi->points[i].x;
+        pointRGB.y = pc_ptr_xyzi->points[i].y;
+        pointRGB.z = pc_ptr_xyzi->points[i].z;
+        float intensity = pc_ptr_xyzi->points[i].intensity;
+        double a_[4] = { pointRGB.x, pointRGB.y, pointRGB.z, 1.0 };
+        cv::Mat pos(4, 1, CV_64F, a_);
+        cv::Mat newpos(this->P_ir2lidar * pos);
+
+        float x = (float)(newpos.at<double>(0, 0) / newpos.at<double>(2, 0));
+        float y = (float)(newpos.at<double>(1, 0) / newpos.at<double>(2, 0));
+        
+        // ROS_INFO("x = %f, y =%f", x, y);
+        // Trims viewport according to image size
+        if (pointRGB.x >= 0)
+        {
+          if (x >= 0 && x < this->ir_img_width && y >= 0 && y < this->ir_img_height)
+          {
+            //  imread BGR（BITMAP）
+            int row = int(y + 0.5);
+            int column = int(x + 0.5);
+            if (row < ir_img_height && column < ir_img_width)
+            {
+                // ROS_INFO("row = %d, column  =%d", row, column);
+                
+                pointRGB.r = ir_img.at<cv::Vec3b>(row, column)[2];
+                pointRGB.g = ir_img.at<cv::Vec3b>(row, column)[1];
+                pointRGB.b = ir_img.at<cv::Vec3b>(row, column)[0];
+                
+                pc_ptr_xyzir->push_back(pointRGB);
+            }
+          }
+        }
+    }
+    
+    pc_ptr_xyzir->width = 1;
+    pc_ptr_xyzir->height = pc_ptr_xyzir->points.size();
+    ROS_INFO("pc_ptr_xyzir.size = %d", pc_ptr_xyzir->points.size());
+    // range image processing and show
+    pcl::visualization::CloudViewer viewer("Simple Cloud Viewer"); //创造一个显示窗口
+    viewer.showCloud(this->pc_ptr_xyzir);
+    while (!viewer.wasStopped())
+    {
+    }
+    
+    // cv::applyColorMap(mask_img, mask_im_color, cv::COLORMAP_JET);
+    // cv::imshow("range_image", normalize_range_img);
+    // cv::imshow("range_image", color_range_img);
+    // cv::waitKey(0);
+    // cv::imshow("mask_image", mask_im_color);
+    // cv::waitKey(0);
+
+}   
+
+
 
 int main(int argc, char **argv) {
   ros::init(argc, argv, "review_color_lidar_node");
-  ImageLivoxFusion img_lidar_fusion_obj;
-  int res = img_lidar_fusion_obj.get_data_and_fusion();
-  img_lidar_fusion_obj.choose_corners();
-  // save
-  if (res != 0){
-      ROS_INFO("RES = %d", res);
-      return -1;
-  }
+  IrRgbRegistration registration_obj;
+  registration_obj.fusion_ir_lidar();
+
+  // registration_obj.choose_corners();
+  
   ROS_INFO("there are %d args", argc);
   if (strcmp(argv[1], "true") == 0) 
   {
       ROS_INFO("START SAVING");
-      std::string output_dir = img_lidar_fusion_obj.save_dir + img_lidar_fusion_obj.prefix + std::string(".pcd");
-      pcl::io::savePCDFile(output_dir, *(img_lidar_fusion_obj.pc_ptr_xyzrgb));
+      std::string output_dir = registration_obj.save_dir + registration_obj.prefix + std::string(".pcd");
+      pcl::io::savePCDFile(output_dir, *(registration_obj.pc_ptr_xyzrgb));
   }
   // visualize
   if (strcmp(argv[2], "true") == 0) 
   {
     ROS_INFO("START visualizing");
     pcl::visualization::CloudViewer viewer("Simple Cloud Viewer"); //创造一个显示窗口
-    viewer.showCloud(img_lidar_fusion_obj.pc_ptr_xyzrgb);
+    viewer.showCloud(registration_obj.pc_ptr_xyzrgb);
     while (!viewer.wasStopped())
     {
     }

@@ -12,7 +12,7 @@
   
   
   <Input>"/home/why/ROS_self/publish_collect_review_data/src/review_data/src/calib_src/config/mono_imgs.xml"</Input>
-  <Input_IR>0</Input_IR>
+  <Input_IR>1</Input_IR>
   <Input_FlipAroundHorizontalAxis>0</Input_FlipAroundHorizontalAxis>
   
   
@@ -28,7 +28,7 @@
   <Calibrate_FixPrincipalPointAtTheCenter> 0 </Calibrate_FixPrincipalPointAtTheCenter>
   
   
-  <Write_outputFileName>"/media/why/LENOVO_USB_HDD/ir_rgb_registration_data_collect/0001_monocalib_rgb.yaml"</Write_outputFileName>
+  <Write_outputFileName>"/media/why/LENOVO_USB_HDD/ir_rgb_registration_data_collect/0019_monocalib_ir.yaml"</Write_outputFileName>
   
   <Write_DetectedFeaturePoints>0</Write_DetectedFeaturePoints>
   
