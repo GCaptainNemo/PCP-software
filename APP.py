@@ -24,7 +24,8 @@ import time
 
 COLLECT_DATA_LAUNCH_ADDR = "/home/why/ROS_self/publish_collect_review_data/src/collect_data/launch/collect_data.launch"
 COLLECT_CALIB_LAUNCH_ADDR = "/home/why/ROS_self/publish_collect_review_data/src/collect_data/launch/collect_calib.launch"
-PUBLISH_LAUNCH_ADDR = "/home/why/ROS_self/publish_collect_review_data/src/collect_data/launch/publish_raw_data.launch"
+PUBLISH_LAUNCH_ADDR = "/home/why/ROS_self/publish_collect_review_data/src/collect_data/launch/publish_raw_data.launch"  # raw data/without visualize
+PUBLISH_LIDAR_ONLY_ADDR = "/home/why/driver/ws_livox/src/livox_ros_driver/launch/livox_lidar_msg.launch"
 START_PUBLISH_FLAG = 0
 
 IR_DEVICE = 4
@@ -33,6 +34,7 @@ RGB_DEVICE = 'rtsp://admin:a12345678@192.168.1.64/1'
            
 class ThreadStartRosbag(QtCore.QThread):
     signal_finished = pyqtSignal(int)
+    signal_started = pyqtSignal()
     def __init__(self):
         super(ThreadStartRosbag, self).__init__()
         self.record_time = None
@@ -40,6 +42,7 @@ class ThreadStartRosbag(QtCore.QThread):
 
     def run(self):
         if self.record_time and self.lidar_file_name:
+            self.signal_started.emit()
             os.system("rosbag record /livox/lidar/ --duration={} -O ".format(self.record_time) + self.lidar_file_name)
             self.signal_finished.emit(0)
         else:
@@ -95,20 +98,6 @@ class MultiThreadWinPicture(QtWidgets.QWidget):
         self.camera_label.setScaledContents(False)
         vlayout = QtWidgets.QVBoxLayout()
         vlayout.addWidget(self.camera_label)
-
-        # #########################################
-        # add button
-        # ########################################
-        # hlayout = QtWidgets.QHBoxLayout()
-        # self.start_button = QtWidgets.QPushButton("open")
-        # self.start_button.clicked.connect(self.open_camera)
-        # self.close_button = QtWidgets.QPushButton("close")
-        # self.close_button.clicked.connect(self.close_camera) # cannot stop thread
-        
-        # hlayout.addWidget(self.start_button)
-        # hlayout.addWidget(self.close_button)
-        # vlayout.addLayout(hlayout)
-        # # ####################################################
         self.setLayout(vlayout)
 
   
@@ -123,12 +112,6 @@ class MultiThreadWinPicture(QtWidgets.QWidget):
             [process.start() for process in self.processes]
 
 
-    # def close_camera(self):
-    #     ...
-    #     # [process.pause() for process in self.processes]
-        
-    #     # self.cap.release()
-    #     # self.camera_label.clear()
 
 
 class SingleThreadWinPicture(QtWidgets.QWidget):
@@ -156,10 +139,7 @@ class SingleThreadWinPicture(QtWidgets.QWidget):
     
     def show_camera(self):
         flag, self.image = self.cap.read()
-        # if self.image.shape[0] > 800:
-        #     show = cv2.resize(self.image,(480,320))
-        # else:
-        #     show = self.image
+        
         self.image = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
         if flag:
             show_image = QtGui.QImage(self.image.data, self.image.shape[1],self.image.shape[0], QtGui.QImage.Format_RGB888)
@@ -184,16 +164,15 @@ class SingleThreadWinPicture(QtWidgets.QWidget):
 class MainWindow(QtWidgets.QWidget):
     def __init__(self):
         super(MainWindow, self).__init__()
+        
+
         VSplitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         HSplitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
 
 
         self.setWindowTitle("PAC")   # publish and collect data
-        # self.rgb_widget = SingleThreadWinPicture(RGB_DEVICE)
         self.ir_widget = SingleThreadWinPicture(IR_DEVICE)
         self.rgb_widget = MultiThreadWinPicture(RGB_DEVICE)
-        # self.ir_widget = MultiThreadWinPicture(IR_DEVICE)
-
         VSplitter.addWidget(self.rgb_widget)
         VSplitter.addWidget(self.ir_widget)
         # ###############################################################3
@@ -201,11 +180,18 @@ class MainWindow(QtWidgets.QWidget):
         self.btn_start_publish = QtWidgets.QPushButton('Start Publish')
         # self.btn_stop_publish = QtWidgets.QPushButton('Stop Publish')
         self.btn_start_collect_triplet = QtWidgets.QPushButton('Collect ir/rgb/lidar triplet')
+        self.rosbag_record_progressbar = QtWidgets.QProgressBar()
+        self.rosbag_record_progressbar.setValue(0)
+        self.rosbag_timer = QtCore.QTimer() # timer to collect rosbag
+        self.rosbag_timer.timeout.connect(self.update_progressbar)
+        self.rosbag_recorded_time = 0
+
         self.btn_start_collect_pair = QtWidgets.QPushButton('Collect ir/rgb pair')
         Hlayout_1.addWidget(self.btn_start_publish)
         # Hlayout_1.addWidget(self.btn_stop_publish)
 
         Hlayout_1.addWidget(self.btn_start_collect_triplet)
+        Hlayout_1.addWidget(self.rosbag_record_progressbar)
         Hlayout_1.addWidget(self.btn_start_collect_pair)
         self.publish_launch = None
         self.btn_start_publish.clicked.connect(self.start_publish)
@@ -306,24 +292,10 @@ class MainWindow(QtWidgets.QWidget):
         # ##############################################################
         # ros node subscribe
         # ##############################################################
-        # self.subscribe_rgb_thread = cameraCaptureThread(RGB_DEVICE)
-        # self.subscribe_ir_thread = cameraCaptureThread(IR_DEVICE)
-        # self.camera_capture_controller = cameraCaptureController()
-        # self.stop_event = threading.Event()
-        # self.stop_event.clear()
-        # self.update_ir_thread = threading.Thread(target=self.update_ir_img)
-        # self.update_ir_thread.start()
-        # self.update_rgb_thread = threading.Thread(target=self.update_rgb_img)
-        # self.update_rgb_thread.start()
-        
-        # self.subscribe_thread = CameraRosNode()
        
-        
-
-        # self.subscribe_rgb_thread.rgb_image_signal.connect(self.update_rgb_img)
-        # self.subscribe_ir_thread.ir_image_signal.connect(self.update_ir_img)
         self.thread_start_rosbag = ThreadStartRosbag()
         self.thread_start_rosbag.signal_finished.connect(self.finished_rosbag_record)
+        self.thread_start_rosbag.signal_started.connect(self.started_rosbag_record)
 
 
         # #############################################################
@@ -339,16 +311,14 @@ class MainWindow(QtWidgets.QWidget):
     def start_publish(self):
         global START_PUBLISH_FLAG
         START_PUBLISH_FLAG = 1
-        # uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
-        # roslaunch.configure_logging(uuid)
-        # self.publish_launch = roslaunch.parent.ROSLaunchParent(
-        #     uuid, [PUBLISH_LAUNCH_ADDR])
-        # self.publish_launch.start()
-        # self.subscribe_rgb_thread.start()
-        # self.subscribe_ir_thread.start()
+        uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
+        roslaunch.configure_logging(uuid)
+        self.publish_launch = roslaunch.parent.ROSLaunchParent(
+            uuid, [PUBLISH_LIDAR_ONLY_ADDR])
+        self.publish_launch.start()
         self.ir_widget.open_camera()
         self.rgb_widget.open_camera()
-        # QtWidgets.QMessageBox.information(self, "[INFO]", "finish start publishing", QtWidgets.QMessageBox.Ok)
+        QtWidgets.QMessageBox.information(self, "[INFO]", "finish start publishing", QtWidgets.QMessageBox.Ok)
 
     # def stop_publish(self):
     #     global START_PUBLISH_FLAG
@@ -383,7 +353,6 @@ class MainWindow(QtWidgets.QWidget):
 
             self.thread_start_rosbag.start()
             QtWidgets.QMessageBox.information(self, "INFO", "rosbag record {} seconds".format(record_time), QtWidgets.QMessageBox.Ok)
-                
             # uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
             # roslaunch.configure_logging(uuid)
             # self.collect_data_launch = roslaunch.parent.ROSLaunchParent(
@@ -391,9 +360,16 @@ class MainWindow(QtWidgets.QWidget):
             # self.collect_data_launch.start()
             # QtWidgets.QMessageBox.information(self, "INFO", "finish collecting ir/rgb/lidar frame", QtWidgets.QMessageBox.Ok)
             # self.collect_data_launch.shutdown()
-
         else:
             QtWidgets.QMessageBox.information(self, "ERROR", "Please start publishing first!", QtWidgets.QMessageBox.Ok)
+
+    def started_rosbag_record(self):
+        self.rosbag_timer.start(1000)
+
+    def update_progressbar(self):
+        self.rosbag_recorded_time += 1 
+        self.rosbag_record_progressbar.setValue(self.rosbag_recorded_time / self.thread_start_rosbag.record_time * 100)
+        
 
     def finished_rosbag_record(self, success):
         if(success == 0):
@@ -401,6 +377,9 @@ class MainWindow(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.Ok)
         elif(success == 1):
             QtWidgets.QMessageBox.information(self, "[ERROR]", "record time or save dir undefined", QtWidgets.QMessageBox.Ok)
+        self.rosbag_timer.stop()
+        self.rosbag_recorded_time = 0
+        self.rosbag_record_progressbar.setValue(0)
         print("thread_start_rosbag status = ", str(self.thread_start_rosbag.isFinished()))
         # self.thread_start_rosbag.stop()
 

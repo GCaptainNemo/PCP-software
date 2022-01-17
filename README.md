@@ -104,7 +104,9 @@ pip install rospkg defusedxml
 
 
 
-<p align="center"><img src="./resources/app.png" width=50%></p>
+<p align="center"><img src="./resources/app.png" width=80%></p>
+
+
 
 <h6 align="center">app界面</h6>
 
