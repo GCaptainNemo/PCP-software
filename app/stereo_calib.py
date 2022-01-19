@@ -169,9 +169,9 @@ if __name__ == "__main__":
 		option = sys.argv[1]
 		res = fam.findall(option)
 		if res[0] != option:
-			raise -1
+			raise ValueError("[error] Prefix must be of size 4(e.g., 0000) or all")
 	except Exception as e:
-		print("[error] please input prefix(e.g., 0000) or all!")
+		print(str(e))
 		exit(0)
 	mono_ir_calib = StereoCalib()
 	mono_ir_calib.start(option)

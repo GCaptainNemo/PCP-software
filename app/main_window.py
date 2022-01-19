@@ -14,253 +14,71 @@ import cv2
 from PyQt5.QtCore import QThread, pyqtSignal,pyqtSlot
 from PyQt5 import QtGui, QtCore, QtWidgets
 import qdarkstyle
-from mono_calib import MonoIrCalib
-from stereo_calib import StereoCalib
+
 import queue
 import threading
 import time
 
+from utils import *
+from main_subwindow import *
 
 # bridge = CvBridge()
-
-COLLECT_DATA_LAUNCH_ADDR = "/home/why/ROS_self/publish_collect_review_data/src/collect_data/launch/collect_data.launch"
-COLLECT_CALIB_LAUNCH_ADDR = "/home/why/ROS_self/publish_collect_review_data/src/collect_data/launch/collect_calib.launch"
+# publish
 PUBLISH_LAUNCH_ADDR = "/home/why/ROS_self/publish_collect_review_data/src/collect_data/launch/publish_raw_data.launch"  # raw data/without visualize
 PUBLISH_LIDAR_ONLY_ADDR = "/home/why/driver/ws_livox/src/livox_ros_driver/launch/livox_lidar_msg.launch"
+# collect
+COLLECT_DATA_LAUNCH_ADDR = "/home/why/ROS_self/publish_collect_review_data/src/collect_data/launch/collect_data.launch"
+COLLECT_CALIB_LAUNCH_ADDR = "/home/why/ROS_self/publish_collect_review_data/src/collect_data/launch/collect_calib.launch"
+# review
+# ....
 START_PUBLISH_FLAG = 0
 
 IR_DEVICE = 4
 RGB_DEVICE = 'rtsp://admin:a12345678@192.168.1.64/1'
 
-           
-class ThreadStartRosbag(QtCore.QThread):
-    signal_finished = pyqtSignal(int)
-    signal_started = pyqtSignal()
-    def __init__(self):
-        super(ThreadStartRosbag, self).__init__()
-        self.record_time = None
-        self.lidar_file_name = None
-
-    def run(self):
-        if self.record_time and self.lidar_file_name:
-            self.signal_started.emit()
-            os.system("rosbag record /livox/lidar/ --duration={} -O ".format(self.record_time) + self.lidar_file_name)
-            self.signal_finished.emit(0)
-        else:
-            self.signal_finished.emit(1)
-
-
-
-class MultiThreadWinPicture(QtWidgets.QWidget):
-    def __init__(self, device_info):
-        """
-        Rewrite Qwidget to display pictures in label widget.
-        """
-        super(MultiThreadWinPicture, self).__init__()
-        self.device_info = device_info
-        self.cap = cv2.VideoCapture()
-        self.set_ui()
-        self.init_process()
-        self.img_queue = queue.Queue()
-
-    def init_process(self):
-        self.processes = []
-        self.processes.append(threading.Thread(target=self.image_put))
-        self.processes.append(threading.Thread(target=self.image_get))
-        [process.setDaemon(True) for process in self.processes]   # 主线程退出则退出
-
-        # self.processes.append(putStoppableThread(self.cap))
-        # self.processes.append(getStoppableThread(self.camera_label))
-        # [process.start() for process in self.processes]
-
-    
-    def image_put(self):
-        while True:
-            self.img_queue.put(self.cap.read()[1])
-            self.img_queue.get() if self.img_queue.qsize() > 1 else time.sleep(0.01)
-
-    def image_get(self):
-        while True:
-            try:
-                self.image = self.img_queue.get()
-                img = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
-                # cv2.imshow("123", frame)
-                # cv2.waitKey(1)
-                # if self.image is None or self.image.size == 0:
-                #     continue
-                show_image = QtGui.QImage(img.data, img.shape[1],img.shape[0], QtGui.QImage.Format_RGB888)
-                self.camera_label.setPixmap(QtGui.QPixmap.fromImage(show_image))
-                time.sleep(0.1)  # if update label too frequently will crash
-            except Exception as e:
-                print(e)
-
-    def set_ui(self):
-        self.camera_label = QtWidgets.QLabel("")
-        self.camera_label.setScaledContents(False)
-        vlayout = QtWidgets.QVBoxLayout()
-        vlayout.addWidget(self.camera_label)
-        self.setLayout(vlayout)
-
-  
-    def open_camera(self):
-
-        flag = self.cap.open(self.device_info)
-        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
-        if flag == False:
-            msg = QtWidgets.QMessageBox.information(self, "[error]", 
-            str(self.device_info) + " camera can not connect!", QtWidgets.QMessageBox.Ok)
-        else:
-            [process.start() for process in self.processes]
-
-
-
-
-class SingleThreadWinPicture(QtWidgets.QWidget):
-    def __init__(self, device_info):
-        """
-        use timer to trigger update label pixmap. cannot display real time
-        Rewrite Qwidget to display pictures in label widget.
-        """
-        super(SingleThreadWinPicture, self).__init__()
-        self.device_info = device_info
-        self.cap = cv2.VideoCapture()
-        self.timer = QtCore.QTimer() #初始化定时器
-        self.set_ui()
-        self.init_slot()
-
-    def set_ui(self):
-        self.camera_label = QtWidgets.QLabel("")
-        self.camera_label.setScaledContents(True)
-        vlayout = QtWidgets.QVBoxLayout()
-        vlayout.addWidget(self.camera_label)
-        self.setLayout(vlayout)
-
-    def init_slot(self):
-        self.timer.timeout.connect(self.show_camera)
-    
-    def show_camera(self):
-        flag, self.image = self.cap.read()
-        
-        self.image = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
-        if flag:
-            show_image = QtGui.QImage(self.image.data, self.image.shape[1],self.image.shape[0], QtGui.QImage.Format_RGB888)
-            self.camera_label.setPixmap(QtGui.QPixmap.fromImage(show_image))
-
-    def open_camera(self):
-        flag = self.cap.open(self.device_info)
-        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
-        if flag == False:
-            msg = QtWidgets.QMessageBox.information(self, "[error]", 
-            str(self.device_info) + " camera can not connect!", QtWidgets.QMessageBox.Ok)
-        else:
-            self.timer.start(30)
-
-
-    def close_camera(self):
-        self.timer.stop()
-        self.cap.release()
-        self.camera_label.clear()
-
-
-class ReviewWidget(QtWidgets.QWidget):
-    def __init__(self):
-        super(ReviewWidget, self).__init__()
-        self.set_ui()
-        self.mono_calib_obj = MonoIrCalib()
-        self.stereo_calib_obj = StereoCalib()
-
-    def set_ui(self):
-        self.label_mono_prefix = QtWidgets.QLabel("Mono prefix: ")
-        self.linedit_mono_prefix = QtWidgets.QLineEdit()
-        self.linedit_mono_prefix.setPlaceholderText("0000 or all")
-
-        self.label_mono_suffix = QtWidgets.QLabel("Mono suffix: ")
-        self.linedit_mono_suffix = QtWidgets.QLineEdit()
-        self.linedit_mono_suffix.setPlaceholderText("ir or rgb")
-        self.btn_mono_calib_start = QtWidgets.QPushButton("Mono Calib")    
-        self.btn_mono_calib_start.clicked.connect(self.start_mono_calib)
-        Hlayout_1 = QtWidgets.QHBoxLayout()
-        Hlayout_1.addWidget(self.label_mono_prefix)
-        Hlayout_1.addWidget(self.linedit_mono_prefix)
-        Hlayout_1.addWidget(self.label_mono_suffix)
-        Hlayout_1.addWidget(self.linedit_mono_suffix)
-        Hlayout_1.addWidget(self.btn_mono_calib_start)
-        # #######################################################
-        self.label_stereo_prefix = QtWidgets.QLabel("Stereo prefix: ")
-        self.linedit_stereo_prefix = QtWidgets.QLineEdit()
-        self.linedit_stereo_prefix.setPlaceholderText("0000 or all")
-        self.btn_stereo_calib_start = QtWidgets.QPushButton("Stereo Calib")  
-        self.btn_stereo_calib_start.clicked.connect(self.start_stereo_calib)
-
-        Hlayout_2 = QtWidgets.QHBoxLayout()
-        Hlayout_2.addWidget(self.label_stereo_prefix)
-        Hlayout_2.addWidget(self.linedit_stereo_prefix)
-        Hlayout_2.addWidget(self.btn_stereo_calib_start)
-
-        vlayout = QtWidgets.QVBoxLayout(self)
-        vlayout.addLayout(Hlayout_1)
-        vlayout.addLayout(Hlayout_2)
-        # ########################################################
-        self.text_widget = QtWidgets.QTextEdit()
-        vlayout.addWidget(self.text_widget)
-        self.setLayout(vlayout)    
-
-    def start_mono_calib(self):
-        try:
-            fam = re.compile("[0-9]{4}|all")
-            PREFIX = self.linedit_mono_prefix.text()
-            res = fam.findall(PREFIX)
-            if res[0] != PREFIX:
-                raise -1
-        except Exception as e:
-            QtWidgets.QMessageBox.information(self, "[error]", "please input prefix(e.g., 0000) or all!", QtWidgets.QMessageBox.Ok)
-            return
-        try:
-            SUFFIX = self.linedit_mono_suffix.text()
-            if (SUFFIX != "ir" and SUFFIX != "rgb" and SUFFIX != "ir_resize"):
-                raise -1
-        except Exception as e:
-            QtWidgets.QMessageBox.information(self, "[error]", "[error] please input ir, rgb or ir_resize!", QtWidgets.QMessageBox.Ok) 
-            return
-        try:
-            success_lst, fail_lst = self.mono_calib_obj.start(PREFIX, SUFFIX)
-            QtWidgets.QMessageBox.information(self, "[info]", "[info] success: {}, fail: {}!".format(success_lst, fail_lst), QtWidgets.QMessageBox.Ok) 
-        except Exception as e:
-            QtWidgets.QMessageBox.information(self, "[error]", str(e), QtWidgets.QMessageBox.Ok) 
-
-
-    def start_stereo_calib(self):
-        try:
-            fam = re.compile("[0-9]{4}|all")
-            option = self.linedit_stereo_prefix.text()
-            res = fam.findall(option)
-            if res[0] != option:
-                raise -1
-        except Exception as e:
-            QtWidgets.QMessageBox.information(self, "[error]", "[error] please input prefix(e.g., 0000) or all!", QtWidgets.QMessageBox.Ok) 
-            return
-        try:
-            success_lst, fail_lst = self.stereo_calib_obj.start(option)
-            QtWidgets.QMessageBox.information(self, "[info]", "[info] success: {}, fail: {}!".format(success_lst, fail_lst), QtWidgets.QMessageBox.Ok) 
-        except Exception as e:
-            QtWidgets.QMessageBox.information(self, "[error]", str(e), QtWidgets.QMessageBox.Ok) 
-
 class MainWindow(QtWidgets.QWidget):
     def __init__(self):
         super(MainWindow, self).__init__()
+        self.set_ui()
+        self.setWindowTitle("ir/rgb/lidar PCR system@WHY")
+        # ##############################################################
+        # ros node subscribe
+        # ##############################################################
+       
+        self.thread_start_rosbag = ThreadStartRosbag(self)
+        self.thread_start_rosbag.signal_finished.connect(self.finished_rosbag_record)
+        self.thread_start_rosbag.signal_started.connect(self.started_rosbag_record)
+        
+
+        # #############################################################
+        try:
+            self.get_current_prefix()
+            self.get_current_recordtime()
+            save_dir = self.get_current_savedir()
+            if(os.path.exists(save_dir)):
+                self.review_Widget.tree_view.set_path(save_dir)
+
+            self.get_info()
+        except Exception as e:
+            pass
+    
+
+    def set_ui(self):
         VSplitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         HSplitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
 
-
         self.setWindowTitle("PAC")   # publish and collect data
-        self.ir_widget = SingleThreadWinPicture(IR_DEVICE)
-        self.rgb_widget = MultiThreadWinPicture(RGB_DEVICE)
+        self.ir_widget = SingleThreadCaptureWin(IR_DEVICE)
+        self.rgb_widget = MultiThreadCaptureWin(RGB_DEVICE)
         VSplitter.addWidget(self.rgb_widget)
         VSplitter.addWidget(self.ir_widget)
         # ###############################################################3
         Hlayout_1 = QtWidgets.QHBoxLayout()
         self.btn_start_publish = QtWidgets.QPushButton('Start Publish')
-        # self.btn_stop_publish = QtWidgets.QPushButton('Stop Publish')
+        self.btn_check_lidar = QtWidgets.QPushButton('Check lidar connection')
+        self.btn_check_lidar.clicked.connect(self.check_lidar)
+        self.btn_stop_publish = QtWidgets.QPushButton('Stop Publish')
+        self.btn_stop_publish.setEnabled(False)
         self.btn_start_collect_triplet = QtWidgets.QPushButton('Collect ir/rgb/lidar triplet')
         self.rosbag_record_progressbar = QtWidgets.QProgressBar()
         self.rosbag_record_progressbar.setValue(0)
@@ -270,7 +88,8 @@ class MainWindow(QtWidgets.QWidget):
 
         self.btn_start_collect_pair = QtWidgets.QPushButton('Collect ir/rgb pair')
         Hlayout_1.addWidget(self.btn_start_publish)
-        # Hlayout_1.addWidget(self.btn_stop_publish)
+        Hlayout_1.addWidget(self.btn_check_lidar)
+        Hlayout_1.addWidget(self.btn_stop_publish)
 
         Hlayout_1.addWidget(self.btn_start_collect_triplet)
         Hlayout_1.addWidget(self.rosbag_record_progressbar)
@@ -278,7 +97,7 @@ class MainWindow(QtWidgets.QWidget):
         self.publish_launch = None
         self.btn_start_publish.clicked.connect(self.start_publish)
 
-        # self.btn_stop_publish.clicked.connect(self.stop_publish)
+        self.btn_stop_publish.clicked.connect(self.stop_publish)
 
         self.btn_start_collect_triplet.clicked.connect(self.start_collect_triplet)
         self.btn_start_collect_pair.clicked.connect(self.start_collect_pair)
@@ -290,16 +109,20 @@ class MainWindow(QtWidgets.QWidget):
         self.btn_get_current_prefix = QtWidgets.QPushButton("Current Prefix")        
         self.btn_next_prefix = QtWidgets.QPushButton("Next Prefix")
         self.btn_set_prefix = QtWidgets.QPushButton("Set Prefix")
+        self.btn_next_and_set_prefix = QtWidgets.QPushButton("Next & Set Prefix")
+
         self.btn_get_current_prefix.clicked.connect(self.get_current_prefix)
         self.btn_next_prefix.clicked.connect(self.get_next_prefix)
         self.btn_set_prefix.clicked.connect(self.set_prefix)
+        self.btn_next_and_set_prefix.clicked.connect(self.next_and_set_prefix)
 
-        
         Hlayout_2.addWidget(self.label_current_prefix)
         Hlayout_2.addWidget(self.linedit_current_prefix)
         Hlayout_2.addWidget(self.btn_get_current_prefix)
         Hlayout_2.addWidget(self.btn_next_prefix)
         Hlayout_2.addWidget(self.btn_set_prefix)
+        Hlayout_2.addWidget(self.btn_next_and_set_prefix)
+
         # ################################################################
         Hlayout_3 = QtWidgets.QHBoxLayout()
         self.label_current_savedir = QtWidgets.QLabel("save dir: ")
@@ -354,9 +177,6 @@ class MainWindow(QtWidgets.QWidget):
         Hlayout_5.addWidget(self.btn_get_info)
         self.btn_get_info.clicked.connect(self.get_info)
 
-
-        
-   
         # ################################################################        
         vlayout = QtWidgets.QVBoxLayout(self)
         HSplitter.addWidget(VSplitter)
@@ -368,27 +188,6 @@ class MainWindow(QtWidgets.QWidget):
         vlayout.addLayout(Hlayout_3)
         vlayout.addLayout(Hlayout_4)
         vlayout.addLayout(Hlayout_5)
-
-
-
-        # ##############################################################
-        # ros node subscribe
-        # ##############################################################
-       
-        self.thread_start_rosbag = ThreadStartRosbag()
-        self.thread_start_rosbag.signal_finished.connect(self.finished_rosbag_record)
-        self.thread_start_rosbag.signal_started.connect(self.started_rosbag_record)
-
-
-        # #############################################################
-        try:
-            self.get_current_prefix()
-            self.get_current_recordtime()
-            self.get_current_savedir()
-            self.get_info()
-        except Exception as e:
-            pass
-   
     
     def start_publish(self):
         global START_PUBLISH_FLAG
@@ -400,15 +199,32 @@ class MainWindow(QtWidgets.QWidget):
         self.publish_launch.start()
         self.ir_widget.open_camera()
         self.rgb_widget.open_camera()
-        QtWidgets.QMessageBox.information(self, "[INFO]", "finish start publishing", QtWidgets.QMessageBox.Ok)
+        res = os.system("rostopic list |grep /livox/lidar")
+        if res == 0:
+            QtWidgets.QMessageBox.information(self, "[INFO]", "finish start publishing, /livox/lidar detected", QtWidgets.QMessageBox.Ok)
+        else:
+            QtWidgets.QMessageBox.information(self, "[WARNING]", "finish start publishing, /livox/lidar not detected!", QtWidgets.QMessageBox.Ok)
+        self.btn_start_publish.setEnabled(False)
+        self.btn_stop_publish.setEnabled(True)
 
-    # def stop_publish(self):
-    #     global START_PUBLISH_FLAG
-    #     START_PUBLISH_FLAG = 0
-    #     if self.publish_launch:
-    #         self.publish_launch.shutdown()
-    #         # self.subscribe_thread.quit()
-    #         QtWidgets.QMessageBox.information(self, "[INFO]", "finish stop publishing", QtWidgets.QMessageBox.Ok)
+    def check_lidar(self):
+        res = os.system("rostopic list |grep /livox/lidar")
+        if res == 0:
+            QtWidgets.QMessageBox.information(self, "[INFO]", "/livox/lidar detected", QtWidgets.QMessageBox.Ok)
+        else:
+            QtWidgets.QMessageBox.information(self, "[INFO]", "/livox/lidar not detected!", QtWidgets.QMessageBox.Ok)
+        
+        
+    def stop_publish(self):
+        global START_PUBLISH_FLAG
+        START_PUBLISH_FLAG = 0
+        if self.publish_launch:
+            self.publish_launch.shutdown()
+        self.rgb_widget.close_camera()
+        self.ir_widget.close_camera()
+        self.btn_start_publish.setEnabled(True)
+        self.btn_stop_publish.setEnabled(False)
+
 
     def start_collect_triplet(self):
         global START_PUBLISH_FLAG
@@ -573,11 +389,11 @@ class MainWindow(QtWidgets.QWidget):
                 prefix = node.get("value")
                 break
         self.linedit_current_prefix.setText(prefix)
-
+        return prefix
 
     def get_next_prefix(self):
         """
-        calculate next prefix
+        calculate next prefix and set to lineedit
         """
         dom = ET.parse(COLLECT_DATA_LAUNCH_ADDR)
         root = dom.getroot()
@@ -587,6 +403,7 @@ class MainWindow(QtWidgets.QWidget):
                 break    
         if not os.path.exists(save_dir):
             QtWidgets.QMessageBox.information(self, "INFO", "current savedir doesn't exist \n", QtWidgets.QMessageBox.Ok) 
+            return -1
         index = 500
         while True:
             prefix = str(index).zfill(4)
@@ -649,6 +466,13 @@ class MainWindow(QtWidgets.QWidget):
         QtWidgets.QMessageBox.information(self, "INFO", "finish set prefix to \n" + COLLECT_DATA_LAUNCH_ADDR + 
                                                 " and \n" + COLLECT_CALIB_LAUNCH_ADDR, QtWidgets.QMessageBox.Ok)
 
+    def next_and_set_prefix(self):
+        """
+        get next prefix and set
+        """
+        if(self.get_next_prefix() != -1):  # save dir not exist
+            self.set_prefix()
+
     def get_current_savedir(self):
         """
         get COLLECT_DATA_LAUNCH_ADDR launch file savedir
@@ -662,7 +486,8 @@ class MainWindow(QtWidgets.QWidget):
         self.linedit_current_savedir.setText(save_dir)
         if not os.path.exists(save_dir):
             QtWidgets.QMessageBox.information(self, "INFO", "current savedir doesn't exist \n", QtWidgets.QMessageBox.Ok)
-        
+        return save_dir
+
     def browse(self):
         download_path = QtWidgets.QFileDialog.getExistingDirectory(self,  
                                     "Browse",  
@@ -726,6 +551,7 @@ class MainWindow(QtWidgets.QWidget):
             QtWidgets.QMessageBox.information(self, "ERROR", COLLECT_DATA_LAUNCH_ADDR  + "dont have record time!", QtWidgets.QMessageBox.Ok)
             return
         self.linedit_current_record_time.setText(res[0][11:])
+        return res[0][11:]
 
     def set_recordtime(self):
         """

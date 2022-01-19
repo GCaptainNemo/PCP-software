@@ -34,6 +34,7 @@
 #include <Eigen/Dense>
 #include <Eigen/Core>
 #include <opencv2/core/eigen.hpp>
+#include <algorithm>
 
 
 #define ROS_MIN_MAJOR 1
@@ -52,8 +53,8 @@ typedef pcl::PointCloud<PointType> PointCloudXYZI;
 typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloudXYZRGB;
 
 constexpr bool IS_FILTER = true;
-// constexpr bool IS_IMAGE_CORRECTION = true;
 constexpr bool IS_IMAGE_CORRECTION = false;
+// constexpr bool IS_IMAGE_CORRECTION = true;
 constexpr bool IsVoxelFilter = true;
 
 
@@ -238,8 +239,8 @@ public:
   // calculate Matching points
   void get_ir_rgb_match_pts();
 
-  // draw match
-  void draw_matches(const std::vector<PairPt> &pair_pts, const cv::Mat &ir_img, const cv::Mat &rgb_img);
+  // draw match 
+  void draw_matches(const std::vector<PairPt> &pair_pts, const cv::Mat &ir_img, const cv::Mat &rgb_img, const int &scale=1);
 
   // choose image correspondance points
   void choose_corners();
@@ -537,21 +538,30 @@ void IrRgbRegistration::get_ir_param()
 void IrRgbRegistration::get_imgs()
 {
   this->rgb_img = cv::imread(rgb_file_dir, -1);
-  if (IS_IMAGE_CORRECTION){
-    cv::Mat undist_img;
-    cv::undistort(rgb_img, undist_img, this->K_rgb, this->D_rgb);
-    rgb_img = undist_img.clone();
-  }
   this->ir_img = cv::imread(ir_file_dir, -1);
+
   if (IS_IMAGE_CORRECTION){
-    cv::Mat undist_img;
-    cv::undistort(ir_img, undist_img, this->K_ir, this->D_ir);
-    ir_img = undist_img.clone();
+    cv::Mat rgb_undist_img, ir_undist_img;
+    cv::undistort(rgb_img, rgb_undist_img, this->K_rgb, this->D_rgb, this->K_rgb);
+    rgb_undist_img.convertTo(rgb_img, CV_8UC3, 1.0, 0.0);
+    // this->rgb_img = undist_img.clone();
+   
+    cv::undistort(ir_img, ir_undist_img, this->K_ir, this->D_ir, this->K_ir);
+    this->ir_img = ir_undist_img.clone();
   }
   this->ir_img_height = ir_img.rows;
   this->ir_img_width = ir_img.cols;
   ROS_INFO("RGB_IMG (rows, cols, channels) = (%d, %d, %d)\n", rgb_img.rows, rgb_img.cols, rgb_img.channels());
   ROS_INFO("IR_IMG (rows, cols, channels) = (%d, %d, %d)\n", ir_img.rows, ir_img.cols, ir_img.channels());
+  uint8_t max_val = *std::max_element(rgb_img.begin<uint8_t>(), rgb_img.end<uint8_t>());
+  uint8_t min_val = *std::min_element(rgb_img.begin<uint8_t>(), rgb_img.end<uint8_t>());
+  ROS_INFO("max_min(rgb) = (%d, %d)", max_val, min_val);
+  
+  cv::normalize(rgb_img, rgb_img, 1, 0, cv::NORM_MINMAX);
+  max_val = *std::max_element(rgb_img.begin<uint8_t>(), rgb_img.end<uint8_t>());
+  min_val = *std::min_element(rgb_img.begin<uint8_t>(), rgb_img.end<uint8_t>());
+  
+  ROS_INFO("max_min(rgb) = (%d, %d)", max_val, min_val);
   cv::imshow("ir_img", ir_img);
   cv::imshow("rgb_img", rgb_img);
   cv::waitKey(0);
@@ -821,22 +831,26 @@ void IrRgbRegistration::get_ir_rgb_match_pts()
   ROS_INFO("there are %d match pts\n", pair_pts.size());
 } 
     
-void IrRgbRegistration::draw_matches(const std::vector<PairPt> &pair_pts, const cv::Mat &ir_img, const cv::Mat &rgb_img)
+void IrRgbRegistration::draw_matches(const std::vector<PairPt> &pair_pts, const cv::Mat &ir_img, const cv::Mat &rgb_img, const int &scale)
 {
   std::vector<cv::KeyPoint> rgb_key_pts, ir_key_pts;
   std::vector<cv::DMatch> matches;
+  cv::Mat match_img;
+  cv::Mat scale_ir_img;
+  cv::Size dst_size(ir_img.cols * scale, ir_img.rows * scale);
+  cv::resize(ir_img, scale_ir_img, dst_size);
   int index = 0;
   for(auto pair_pt: pair_pts)
   {
     cv::KeyPoint rgb_pt(pair_pt.rgb_pt, 1.f);
-    cv::KeyPoint ir_pt(pair_pt.ir_pt, 1.f);
+    cv::KeyPoint ir_pt(pair_pt.ir_pt * scale, 1.f);
     rgb_key_pts.push_back(rgb_pt);
     ir_key_pts.push_back(ir_pt);
     if (index % 200 == 0) matches.push_back(cv::DMatch(index, index ,0.0));
     index++;
   }
-  cv::Mat match_img;
-  cv::drawMatches(rgb_img, rgb_key_pts, ir_img, ir_key_pts, matches, match_img, cv::Scalar(0, 255, 0));
+  cv::drawMatches(rgb_img, rgb_key_pts, scale_ir_img, ir_key_pts, matches, match_img, cv::Scalar(0, 255, 0));
+ 
   cv::imshow("match_img", match_img);
   cv::waitKey(0);
 

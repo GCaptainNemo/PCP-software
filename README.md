@@ -38,8 +38,17 @@ launch文件中具有**两个关键参数**：
     查看FLIR设备号: `ls -ltrh /dev/video*`
     ubuntu USB设备号一般为从零开始依次累加，但多个设备每次开机后**设备号不固定**，应该重启后再接FLIR USB。
 
-2. HIKVISION无法接收数据
-网络连接问题，需要重新打开、关闭网络（网络->PCI以太网）。
+2. 找不到device 4：之前客户端进程没有关掉，因此cv2.VideoCapture占用着硬件设备资源，导致新的进程无法使用。
+
+    ```
+    ps -aux |grep python3 ： 查看进程号
+    sudo kill -9 xxx： 关闭xxx进程号
+    ```
+
+    ```
+
+3. HIKVISION无法接收数据
+  网络连接问题，需要重新打开、关闭网络（网络->PCI以太网）。或者重启
 
 ### 2. 发布数据
 
