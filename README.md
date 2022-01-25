@@ -45,10 +45,10 @@ launch文件中具有**两个关键参数**：
     sudo kill -9 xxx： 关闭xxx进程号
     ```
 
-    ```
+    
 
 3. HIKVISION无法接收数据
-  网络连接问题，需要重新打开、关闭网络（网络->PCI以太网）。或者重启
+    网络连接问题，需要重新打开、关闭网络（网络->PCI以太网）。或者重启
 
 ### 2. 发布数据
 
@@ -175,5 +175,6 @@ pip install rospkg defusedxml
 
 [9] [processon在线思维导图](https://www.processon.com/) 
 
+[10] [image_view ROS package](http://wiki.ros.org/image_view)
 
-
+**备注：**使用image_view的ros package可以右键窗口保存图像至./ros中，工业相机3072 * 2048像素

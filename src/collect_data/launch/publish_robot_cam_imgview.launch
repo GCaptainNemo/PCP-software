@@ -1,0 +1,10 @@
+<launch>
+	<!-->with visualize node<-->
+	<include file="$(find hikrobot_camera)/launch/hikrobot_camera.launch">
+	</include>
+	
+        <node pkg="image_view" type="image_view" name="robot_cam_view_node"   respawn="false" output="screen">
+    		<remap from="image" to="/hikrobot_camera/rgb"/>
+    		<param name="autosize" value="true" />
+  	</node>
+</launch>
