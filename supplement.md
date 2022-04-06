@@ -36,7 +36,7 @@ roslaunch collect_data publish_data.launch
 
 ##### 2.1 更改launch文件
 
-**备注:**更改collect_data.launch中的文件保存路径，collect_calib.launch中的文件前缀
+**备注**:更改collect_data.launch中的文件保存路径`save_dir`和文件前缀`prefix`
 
 ```
 python3 modify_name.py
@@ -129,7 +129,7 @@ pip install rospkg defusedxml
 
 [4] [Ros melodic python3环境解决cv_bridge问题](https://blog.csdn.net/weixin_42675603/article/details/107785376)
 
-**备注:**`cv_bridge`是将image_msg转opencv image的库，但在python3中存在问题，需要重新编译(还是不行。。。)。
+**备注**:`cv_bridge`是将image_msg转opencv image的库，但在python3中存在问题，需要重新编译(还是不行。。。)。
 
 [5] [用自定义数据类型解决cv_bridge问题](https://blog.csdn.net/lizhiyuanbest/article/details/108022588)
 
@@ -143,4 +143,4 @@ pip install rospkg defusedxml
 
 [9] [image_view ROS package](http://wiki.ros.org/image_view)
 
-**备注：**使用image_view的ros package可以右键窗口保存图像至./ros中，工业相机3072 * 2048像素
+**备注**:使用image_view的ros package可以右键窗口保存图像至./ros中，工业相机3072 * 2048像素

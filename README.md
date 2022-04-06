@@ -8,13 +8,23 @@
 
 ## 二、简介
 
+### 1. 开发环境、开发语言及软件依赖
+
+1. Linux Ubuntu 18.04
+2. C++/python/Shell
+3. ROS melodic
+
+
+
+### 2. 软件简介
+
 技术上使用C++开发功能内核，用python PyQt开发软件界面，用界面控件和Shell脚本调用功能内核。软件系统的主窗口界面如下所示：
 
 <p align="center"><img src="./resources/app.png" width=80%></p>
 
 <h6 align="center">app界面</h6>
 
-软件分成三个子模块：
+软件分成三个子模块(PCP)：
 
 1. 数据发布子模块(publish data): 统一不同传感器SDK，控制前端传感器发布数据并进行传感器基本参数设置。
 2. 数据收集子模块(collect data): 从前端发布数据流中截取数据保存至本地，具有保存IR/RGB/LIDAR三元数据和IR/RGB二元数据两种模式。
