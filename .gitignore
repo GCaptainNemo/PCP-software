@@ -3,4 +3,7 @@ build/
 devel/
 src/CMakeLists.txt
 src/.vscode/
+*.pyc
+app/__pycache__/stereo_calib.cpython-36.pyc
+
 
