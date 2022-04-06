@@ -203,7 +203,8 @@ public:
     get_rgb_param();  // get rgb camera params
     get_ir_param();  // get ir camera params
     get_datas();    // get data frame
-  
+
+   
    
     
   };
@@ -248,6 +249,13 @@ public:
   // use direct linear transform calculate projected matrix and project range image to infrared image
   void dlt();
   
+
+  // check cam-lidar extrinsic parameters
+  void check_extrinsic_par(const cv::Mat &img, PointCloudXYZI::Ptr point_cloud, 
+  const cv::Mat &intrinsic_mat, const cv::Mat &dist_mat, 
+  const cv::Mat &extrinsic_mat, cv::Mat &merge_image, bool is_fill_img=true);
+
+
 };
 
 void IrRgbRegistration::dlt()
@@ -444,7 +452,7 @@ void IrRgbRegistration::get_rgb_param()
   // Intrinsic matrix parameters
   std::vector<double> Intrinsic;
   if(!node_handle.getParam("/review_color_lidar_node/CameraMat/data", param_list))
-      ROS_ERROR("Failed to get extrinsic parameter.");
+      ROS_ERROR("Failed to get intrinsic parameter.");
   ROS_INFO("\n get intrinsic parameter:");
   for (size_t i = 0; i < param_list.size(); ++i) 
   {
@@ -493,18 +501,19 @@ void IrRgbRegistration::get_rgb_param()
   intensity_img = cv::Mat::zeros(rgb_img_height, rgb_img_width, CV_16UC1);
   // convert cv::Mat
   cv::Mat dist_array(5, 1, CV_64F, &dist[0]);
-  this->D_rgb = dist_array.clone();
+  this->D_rgb = dist_array.clone(); // 不然数值部队，dist生命周期结束会回收
   
   
-  this->K_rgb = cv::Mat(3, 3, CV_64F, &Intrinsic[0]);;
+  cv::Mat camera_matrix(3, 3, CV_64F, &Intrinsic[0]);;
+  this->K_rgb = camera_matrix.clone();
 
-  
   cv::Mat ext_(4, 4, CV_64F, &Extrin_matrix[0]);
   cv::Mat invRt = ext_(cv::Rect(0, 0, 3, 3));
   cv::Mat R = invRt.t();
   cv::Mat invT = -R * ext_(cv::Rect(3, 0, 1, 3));
   cv::hconcat(R, invT, this->T_rgb2lidar);
   // transform matrix: from global coordinate to image coordinate
+  
   this->P_rgb2lidar = this->K_rgb * this->T_rgb2lidar;
 }
 
@@ -540,15 +549,15 @@ void IrRgbRegistration::get_imgs()
   this->rgb_img = cv::imread(rgb_file_dir, -1);
   this->ir_img = cv::imread(ir_file_dir, -1);
 
-  if (IS_IMAGE_CORRECTION){
-    cv::Mat rgb_undist_img, ir_undist_img;
-    cv::undistort(rgb_img, rgb_undist_img, this->K_rgb, this->D_rgb, this->K_rgb);
-    rgb_undist_img.convertTo(rgb_img, CV_8UC3, 1.0, 0.0);
-    // this->rgb_img = undist_img.clone();
+  // if (IS_IMAGE_CORRECTION){
+  //   cv::Mat rgb_undist_img, ir_undist_img;
+  //   cv::undistort(rgb_img, rgb_undist_img, this->K_rgb, this->D_rgb, this->K_rgb);
+  //   rgb_undist_img.convertTo(rgb_img, CV_8UC3, 1.0, 0.0);
+  //   // this->rgb_img = undist_img.clone();
    
-    cv::undistort(ir_img, ir_undist_img, this->K_ir, this->D_ir, this->K_ir);
-    this->ir_img = ir_undist_img.clone();
-  }
+  //   cv::undistort(ir_img, ir_undist_img, this->K_ir, this->D_ir, this->K_ir);
+  //   this->ir_img = ir_undist_img.clone();
+  // }
   this->ir_img_height = ir_img.rows;
   this->ir_img_width = ir_img.cols;
   ROS_INFO("RGB_IMG (rows, cols, channels) = (%d, %d, %d)\n", rgb_img.rows, rgb_img.cols, rgb_img.channels());
@@ -557,20 +566,19 @@ void IrRgbRegistration::get_imgs()
   uint8_t min_val = *std::min_element(rgb_img.begin<uint8_t>(), rgb_img.end<uint8_t>());
   ROS_INFO("max_min(rgb) = (%d, %d)", max_val, min_val);
   
-  cv::normalize(rgb_img, rgb_img, 1, 0, cv::NORM_MINMAX);
+  // cv::normalize(rgb_img, rgb_img, 1, 0, cv::NORM_MINMAX);
   max_val = *std::max_element(rgb_img.begin<uint8_t>(), rgb_img.end<uint8_t>());
   min_val = *std::min_element(rgb_img.begin<uint8_t>(), rgb_img.end<uint8_t>());
   
   ROS_INFO("max_min(rgb) = (%d, %d)", max_val, min_val);
-  cv::imshow("ir_img", ir_img);
-  cv::imshow("rgb_img", rgb_img);
-  cv::waitKey(0);
+  // cv::imshow("ir_img", ir_img);
+  // cv::imshow("rgb_img", rgb_img);
+  // cv::waitKey(0);
 
   // cv::Size dst_size(rgb_img_width, rgb_img_height);
-  
   // cv::resize(ir_img, ir_img, dst_size, cv::INTER_CUBIC);
-//   cv::imshow("src", rgb_img);
-//   cv::waitKey(0);
+  //   cv::imshow("src", rgb_img);
+  //   cv::waitKey(0);
 };
 
 void IrRgbRegistration::get_lidar()
@@ -716,6 +724,102 @@ void IrRgbRegistration::fusion_rgb_lidar()
     // cv::waitKey(0);
 
 }   
+
+// check cam-lidar extrinsic parameters
+void IrRgbRegistration::check_extrinsic_par(const cv::Mat &img, PointCloudXYZI::Ptr point_cloud, 
+  const cv::Mat &intrinsic_mat, const cv::Mat &dist_mat, 
+  const cv::Mat &extrinsic_mat, cv::Mat &merge_image, bool is_fill_img)
+{
+    ROS_INFO("------------ START FUSION rgb lidar! ------------");
+    int size = point_cloud->points.size();
+    float fx = intrinsic_mat.at<double>(0, 0);
+    float fy = intrinsic_mat.at<double>(1, 1);
+    float cx = intrinsic_mat.at<double>(0, 2);
+    float cy = intrinsic_mat.at<double>(1, 2);
+    float k1 = dist_mat.at<double>(0);
+    float k2 = dist_mat.at<double>(1);
+    float p1 = dist_mat.at<double>(2);
+    float p2 = dist_mat.at<double>(3);
+    float k3 = dist_mat.at<double>(4);
+
+
+    std::cout << "intrinsic_mat = " << intrinsic_mat << std::endl;
+    ROS_INFO("fx, fy, cx, cy = %f, %f, %f, %f", fx, fy, cx, cy);
+    int height_ = img.rows;
+    int width_ = img.cols;
+    cv::Mat image_project = cv::Mat::zeros(height_, width_, CV_16UC1);
+    
+  
+    for (int i = 0; i < size; i++)
+    {
+        // project get the photo coordinate
+        pcl::PointXYZI point_ = point_cloud->points[i];
+        double a_[4] = { point_.x, point_.y, point_.z, 1.0 };
+        cv::Mat pos(4, 1, CV_64F, a_);
+        cv::Mat newpos(extrinsic_mat * pos);
+        // to normalized plane
+        float xo = (float)(newpos.at<double>(0, 0) / newpos.at<double>(2, 0));   
+        float yo = (float)(newpos.at<double>(1, 0) / newpos.at<double>(2, 0));
+        float r2 = xo * xo + yo * yo;
+        float r4 = r2 * r2;
+        float distortion = 1.0 + k1 * r2 + k2 * r4;
+        // 归一化平面径向畸变与切向畸变矫正。其中（x，y）是重投影点
+        // x' = x(1 + k1r2 + k2r4 + k3r6) + 2p1 * x * y + p2(r2 + 2 * x2)
+        // y' = y(1 + k1r2 + k2r4 + k3r6) + 2p2 * x * y + p1(r2 + 2 * y2)
+        float xd = xo * distortion + 2 * p1 * xo * yo +
+              p2 * (r2 + 2 * xo * xo);
+        float yd = yo * distortion + 2 * p2 * xo * yo +
+              p1 * (r2 + 2 * yo * yo);
+        float x = fx * xd + cx;
+        float y = fy * yd + cy;
+
+
+        // ROS_INFO("x = %f, y =%f", x, y);
+        // Trims viewport according to image size
+        if (point_.x >= 0)
+        {
+          if (x >= 0 && x < width_ && y >= 0 && y < height_)
+          {
+            //  imread BGR（BITMAP）
+            int row = int(y + 0.5);
+            int column = int(x + 0.5);
+            if (row < height_ && column < width_)
+            {
+              float intensity = point_.intensity;
+              if (intensity > 100) {
+                intensity = 65535;
+              } else {
+                intensity = (intensity / 150.0) * 65535;
+              }
+              image_project.at<ushort>(row, column) = intensity;
+            }
+          }
+        }
+    }
+    image_project.convertTo(image_project, CV_8UC1, 1 / 256.0);
+    if (is_fill_img) {
+      // for (int i = 0; i < 5; i++) {
+      //   image_project = fillImg(image_project, UP, LEFT);
+      // }
+    }
+    cv::Mat map_img = cv::Mat::zeros(height_, width_, CV_8UC3);
+    for (int x = 0; x < width_; x++) {
+      for (int y = 0; y < height_; y++) {
+        uint8_t r, g, b;
+        float norm = image_project.at<uchar>(y, x) / 256.0;
+        mapJet(norm, 0, 1, r, g, b);
+        map_img.at<cv::Vec3b>(y, x)[0] = b;
+        map_img.at<cv::Vec3b>(y, x)[1] = g;
+        map_img.at<cv::Vec3b>(y, x)[2] = r;
+      }
+    }
+    merge_image = 0.5 * map_img + 0.8 * img;
+    cv::imshow("merge_image", merge_image);
+    cv::imshow("map_img", map_img);
+
+    cv::waitKey(0);
+    
+};
 
 
 void IrRgbRegistration::fusion_ir_lidar()
@@ -865,6 +969,12 @@ void IrRgbRegistration::draw_matches(const std::vector<PairPt> &pair_pts, const 
 int main(int argc, char **argv) {
   ros::init(argc, argv, "review_color_lidar_node");
   IrRgbRegistration registration_obj;
+   // check extrinsic_par
+  std::cout << "K_rgb = " << registration_obj.K_rgb << std::endl;
+
+  cv::Mat merge_img;
+  registration_obj.check_extrinsic_par(registration_obj.rgb_img, registration_obj.pc_ptr_xyzi, registration_obj.K_rgb, registration_obj.D_rgb, 
+    registration_obj.T_rgb2lidar, merge_img);
   // #define DEBUG_POSE
   #ifdef DEBUG_POSE
   std::cout << "P_rgb2lidar = " << registration_obj.P_rgb2lidar << std::endl;
